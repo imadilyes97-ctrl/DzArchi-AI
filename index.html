@@ -819,11 +819,14 @@
       // Liste des Spaces par défaut
       // Format: { id, name, type } — type indique la structure d'API attendue
       DEFAULT_SPACES: [
-        { id: 'stabilityai/stable-diffusion-3.5-large',   name: 'SD 3.5 Large',    type: 'sd3' },
-        { id: 'black-forest-labs/FLUX.1-schnell',         name: 'FLUX Schnell',    type: 'flux' },
-        { id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'SD XL Base',      type: 'sdxl' },
-        { id: 'stabilityai/stable-cascade',               name: 'Stable Cascade',  type: 'cascade' },
-        { id: 'ByteDance/SDXL-Lightning',                 name: 'SDXL Lightning',  type: 'sdxl' },
+        // Modèles compatibles API Inference HF
+        // img2img = prend une image + prompt en entrée ; txt2img = prompt seulement
+        { id: 'stabilityai/stable-diffusion-2-1',              name: 'SD 2.1',              type: 'img2img' },
+        { id: 'stabilityai/stable-diffusion-xl-base-1.0',      name: 'SD XL Base',          type: 'img2img' },
+        { id: 'runwayml/stable-diffusion-v1-5',                name: 'SD 1.5',              type: 'img2img' },
+        { id: 'stabilityai/stable-diffusion-3.5-large',        name: 'SD 3.5 Large',        type: 'img2img', gated: true },
+        { id: 'black-forest-labs/FLUX.1-schnell',              name: 'FLUX Schnell',        type: 'txt2img' },
+        { id: 'prompthero/openjourney-v4',                     name: 'OpenJourney v4',      type: 'txt2img' },
       ],
       // Messages de chargement qui tournent en boucle
       LOADING_MESSAGES: [
@@ -1498,99 +1501,56 @@
 
     // ─── Appel à l'API Inference Hugging Face (rapide, pas de cold start) ──
     // Nécessite un token HF gratuit : https://huggingface.co/settings/tokens
+    // La fonction retourne { url, error } — url si succès, error si échec
     async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
-      // Convertir l'image en Blob pour FormData
-      const formData = new FormData();
-      formData.append('image', imageFile, 'floorplan.png');
-      formData.append('inputs', prompt);
+      // Lire l'image en base64 (utile pour les modèles qui n'acceptent pas FormData)
+      const imageBase64 = await fileToBase64(imageFile);
+      const imageData = imageBase64.split(',')[1]; // Retirer le préfixe "data:image/...;base64,"
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 min timeout
+      // ── Format 1 : img2img via JSON (base64 dans le body) ──
+      // C'est le format le plus universel pour les modèles qui supportent img2img
+      const tryFormat1 = async () => {
+        const body = JSON.stringify({
+          inputs: prompt,
+          image: imageData,
+        });
+        const resp = await fetch(
+          `https://api-inference.huggingface.co/models/${spaceId}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body,
+            signal: state.abortController?.signal,
+          }
+        );
+        const respText = await resp.text().catch(() => '');
+        return { status: resp.status, body: respText };
+      };
 
-      try {
-        loadingMessage.textContent = '⚡ Envoi vers API Inference HF…';
-        loadingSub.textContent = 'Pas de cold start — réponse rapide';
-
-        const response = await fetch(
+      // ── Format 2 : img2img via FormData (multipart) ──
+      const tryFormat2 = async () => {
+        const fd = new FormData();
+        fd.append('image', imageFile, 'floorplan.png');
+        fd.append('inputs', prompt);
+        const resp = await fetch(
           `https://api-inference.huggingface.co/models/${spaceId}`,
           {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` },
-            body: formData,
-            signal: controller.signal,
+            body: fd,
+            signal: state.abortController?.signal,
           }
         );
+        const respText = await resp.text().catch(() => '');
+        return { status: resp.status, body: respText };
+      };
 
-        clearTimeout(timeoutId);
-
-        // 503 = model is loading, on attend et on réessaie
-        if (response.status === 503) {
-          loadingMessage.textContent = '🔄 Modèle en chargement…';
-          loadingSub.textContent = 'Premier appel, le modèle se charge (20-40s)';
-          // Réessayer jusqu'à 5 fois avec 10s d'attente
-          for (let retry = 0; retry < 5; retry++) {
-            await new Promise(r => setTimeout(r, 10000));
-            const retryResp = await fetch(
-              `https://api-inference.huggingface.co/models/${spaceId}`,
-              {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-                signal: controller.signal,
-              }
-            );
-            if (retryResp.ok) {
-              const blob = await retryResp.blob();
-              if (blob.size > 1000) {
-                return URL.createObjectURL(blob);
-              }
-            }
-            loadingSub.textContent = `Tentative ${retry + 2}/5…`;
-          }
-          throw new Error('Le modèle est trop long à charger sur API Inference');
-        }
-
-        if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          const shortText = text.substring(0, 200);
-          if (response.status === 401 || response.status === 403) {
-            throw new Error(`Token HF invalide ou expiré (HTTP ${response.status})`);
-          }
-          if (response.status === 400) {
-            // Peut-être que ce modèle ne supporte pas img2img → essayer text-to-image
-            throw new Error('format_text_only');
-          }
-          throw new Error(`API HF (HTTP ${response.status}): ${shortText}`);
-        }
-
-        // Succès : récupérer l'image
-        const blob = await response.blob();
-
-        if (blob.size < 500) {
-          throw new Error('L\'image générée est vide');
-        }
-
-        return URL.createObjectURL(blob);
-
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.message === 'format_text_only') {
-          return callHfInferenceTextOnly(spaceId, prompt, token);
-        }
-        throw error;
-      }
-    }
-
-    // Fallback text-to-image pour modèles sans support img2img
-    async function callHfInferenceTextOnly(spaceId, prompt, token) {
-      loadingMessage.textContent = '🖼️ Mode texte→image…';
-      loadingSub.textContent = 'Ce modèle ne supporte pas l\'image en entrée';
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-      try {
-        const response = await fetch(
+      // ── Format 3 : text-to-image (JSON, pas d'image en entrée) ──
+      const tryFormat3 = async () => {
+        const resp = await fetch(
           `https://api-inference.huggingface.co/models/${spaceId}`,
           {
             method: 'POST',
@@ -1599,48 +1559,115 @@
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ inputs: prompt }),
-            signal: controller.signal,
+            signal: state.abortController?.signal,
           }
         );
+        const respText = await resp.text().catch(() => '');
+        return { status: resp.status, body: respText };
+      };
 
-        clearTimeout(timeoutId);
+      // ── Essayer les formats dans l'ordre ──
+      const formats = [
+        { name: 'img2img (JSON/base64)', fn: tryFormat1 },
+        { name: 'img2img (multipart)',   fn: tryFormat2 },
+        { name: 'text-to-image',         fn: tryFormat3 },
+      ];
 
-        if (response.status === 503) {
-          for (let retry = 0; retry < 5; retry++) {
-            await new Promise(r => setTimeout(r, 10000));
-            const retryResp = await fetch(
-              `https://api-inference.huggingface.co/models/${spaceId}`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ inputs: prompt }),
-                signal: controller.signal,
+      let lastError = null;
+
+      for (const fmt of formats) {
+        try {
+          loadingSub.textContent = `Format : ${fmt.name}`;
+
+          const result = await withTimeout(fmt.fn(), 90000); // 90s timeout
+
+          // 503 = model loading → attendre et réessayer
+          if (result.status === 503) {
+            loadingMessage.textContent = '🔄 Modèle en chargement…';
+            loadingSub.textContent = 'Premier appel, le modèle se charge…';
+            for (let retry = 0; retry < 5; retry++) {
+              await new Promise(r => setTimeout(r, 8000));
+              const retryResult = await fmt.fn();
+              if (retryResult.status === 200) {
+                const blob = new Blob([retryResult.body], { type: 'image/png' });
+                if (blob.size > 500) return URL.createObjectURL(blob);
               }
-            );
-            if (retryResp.ok) {
-              const blob = await retryResp.blob();
-              if (blob.size > 1000) return URL.createObjectURL(blob);
+              loadingSub.textContent = `Tentative ${retry + 2}/5…`;
             }
+            lastError = new Error('Modèle trop long à charger sur API Inference');
+            continue;
           }
-          throw new Error('Modèle trop long à charger');
+
+          // 200 = succès ! L'image est dans le body
+          if (result.status === 200) {
+            const blob = new Blob([result.body], { type: 'image/png' });
+            if (blob.size > 500) return URL.createObjectURL(blob);
+            throw new Error('Image générée vide');
+          }
+
+          // 401/403 = token invalide ou gated
+          if (result.status === 401 || result.status === 403) {
+            let reason = '';
+            try {
+              const j = JSON.parse(result.body);
+              reason = j.error || '';
+            } catch {}
+            if (reason.includes('gated') || reason.includes('accept')) {
+              throw new Error(
+                `⛔ Modèle gated : vous devez accepter les termes sur huggingface.co/${spaceId}`
+              );
+            }
+            throw new Error(
+              `🔑 Token HF invalide (HTTP ${result.status}) : ${reason.substring(0, 150)}`
+            );
+          }
+
+          // 404 = modèle introuvable ou non supporté par Inference API
+          if (result.status === 404) {
+            let reason = '';
+            try {
+              const j = JSON.parse(result.body);
+              reason = j.error || '';
+            } catch {}
+            if (reason.includes('gated')) {
+              throw new Error(
+                `⛔ Modèle gated : acceptez les termes sur huggingface.co/${spaceId}`
+              );
+            }
+            // 404 normal : ce format ne marche pas, on essaie le suivant
+            lastError = new Error(`Format ${fmt.name} : ${reason.substring(0, 100) || 'non supporté'}`);
+            continue;
+          }
+
+          // 400 = bad request (format non supporté)
+          if (result.status === 400) {
+            lastError = new Error(`Format ${fmt.name} non supporté`);
+            continue;
+          }
+
+          // Autres erreurs
+          let reason = '';
+          try { const j = JSON.parse(result.body); reason = j.error || ''; } catch {}
+          lastError = new Error(
+            `API HF (HTTP ${result.status}) : ${reason.substring(0, 200) || result.body.substring(0, 200)}`
+          );
+
+        } catch (err) {
+          lastError = err;
         }
-
-        if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          throw new Error(`API HF (HTTP ${response.status}): ${text.substring(0, 200)}`);
-        }
-
-        const blob = await response.blob();
-        if (blob.size < 500) throw new Error('Image vide');
-        return URL.createObjectURL(blob);
-
-      } catch (error) {
-        clearTimeout(timeoutId);
-        throw error;
       }
+
+      throw lastError || new Error('Aucun format API compatible trouvé');
+    }
+
+    // Helper : Promise avec timeout
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Temps de réponse API dépassé')), ms)
+        ),
+      ]);
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
@@ -1667,28 +1694,45 @@
 
       // ── AVEC TOKEN : API Inference HF d'abord (rapide, pas de CORS) ──
       if (hfToken) {
-        const firstSpace = userSpace || CONFIG.DEFAULT_SPACES[0].id;
-        try {
-          showToast(`🚀 API Inference HF → ${firstSpace}`, 'info', 3000);
-          loadingMessage.textContent = '⚡ Appel API Inference Hugging Face…';
-          loadingSub.textContent = 'Génération via API rapide (pas de cold start)';
+        // Construire la liste des modèles à essayer (user + fallbacks)
+        const modelsToTry = [];
+        if (userSpace) modelsToTry.push(userSpace);
+        CONFIG.DEFAULT_SPACES.forEach(s => modelsToTry.push(s.id));
 
-          const imageUrl = await callHfInferenceApi(firstSpace, basePrompt, state.currentFile, hfToken);
+        let lastApiError = null;
 
-          cleanLoading();
-          state.isGenerating = false;
-          showSuccessState(imageUrl);
-          showToast('🎉 Rendu 3D généré avec succès !', 'success', 5000);
-          return;
+        for (let mi = 0; mi < modelsToTry.length; mi++) {
+          const modelId = modelsToTry[mi];
+          if (mi > 0) {
+            loadingMessage.textContent = `🔄 Fallback → ${modelsToTry[mi]}`;
+            loadingSub.textContent = 'Modèle précédent indisponible';
+            await new Promise(r => setTimeout(r, 500));
+          }
+          try {
+            showToast(`🚀 API HF → ${modelId}`, 'info', 3000);
+            loadingMessage.textContent = `⚡ ${modelId}`;
+            loadingSub.textContent = 'Génération via API INF HF…';
 
-        } catch (error) {
-          console.warn('HF API failed, fallback to Spaces:', error.message);
-          if (error.message.includes('401') || error.message.includes('403')) {
-            showToast('❌ Token HF invalide — vérifiez votre token', 'error', 6000);
-          } else {
-            showToast('⚠️ API HF indisponible, fallback Spaces…', 'info', 4000);
+            const imageUrl = await callHfInferenceApi(modelId, basePrompt, state.currentFile, hfToken);
+
+            cleanLoading();
+            state.isGenerating = false;
+            showSuccessState(imageUrl);
+            showToast('🎉 Rendu 3D généré avec succès !', 'success', 5000);
+            return;
+
+          } catch (error) {
+            lastApiError = error;
+            console.warn(`HF model ${modelId} failed:`, error.message);
           }
         }
+
+        // Tous les modèles API Inference ont échoué
+        cleanLoading();
+        state.isGenerating = false;
+        showErrorState('❌ API Inference', lastApiError?.message || 'Tous les modèles ont échoué');
+        showToast(lastApiError?.message || 'Erreur API HF', 'error', 8000);
+        return;
       } else {
         showToast('💡 Ajoutez un token HF (paramètres) pour une génération 10× plus rapide !', 'info', 5000);
       }
