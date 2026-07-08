@@ -1499,51 +1499,62 @@
       return [imageBlob, prompt];
     }
 
-    // ─── Appel à l'API HF via proxy Vercel (pas de CORS) ─────────────────
-    // Le proxy tourne sur le même domaine : pas de blocage navigateur
+    // ─── Appel DIRECT à l'API Inference HF (navigateur → HF) ──────────
     async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
-      // Lire l'image en base64
       const imageBase64 = await fileToBase64(imageFile).catch(() => null);
-      // Envoyer l'image en base64 brute (sans le prefixe data:image/...)
       const imageData = imageBase64 ? imageBase64.split(',')[1] : null;
-      // Aussi essayer avec le prefixe dans certains appels
-      const imageDataUri = imageBase64;
 
-      loadingSub.textContent = 'Proxy Vercel → API HF…';
-
-      const response = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spaceId,
-          prompt,
-          image: imageData,
-          imageUri: imageBase64,
-          token,
+      const hfFetch = (body, ms = 60000) => Promise.race([
+        fetch(`https://api-inference.huggingface.co/models/${spaceId}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
         }),
-        signal: state.abortController?.signal,
-      });
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms)),
+      ]);
 
-      // Lire la réponse
-      const contentType = response.headers.get('content-type') || '';
-
-      if (response.ok) {
-        // Succès : c'est une image
-        if (contentType.includes('image')) {
-          const blob = await response.blob();
-          if (blob.size > 500) return URL.createObjectURL(blob);
-          throw new Error('Image générée vide');
-        }
-        // Succès mais pas une image (normalement jamais)
-        const text = await response.text().catch(() => '');
-        throw new Error(text.substring(0, 200) || 'Réponse inattendue du serveur');
+      const attempts = [];
+      if (imageData) {
+        attempts.push({ n: 'img2img', b: { inputs: prompt, image: imageData } });
+        attempts.push({ n: 'img2img-v2', b: { inputs: prompt, parameters: { image: imageData } } });
+        attempts.push({ n: 'img2img-uri', b: { inputs: prompt, image: imageBase64 } });
       }
+      attempts.push({ n: 'txt2img', b: { inputs: prompt } });
 
-      // Erreur : lire le body en TEXTE d'abord, puis parser JSON
-      const errText = await response.text().catch(() => 'inconnue');
-      let errMsg = errText;
-      try { const j = JSON.parse(errText); errMsg = j.error || errText; } catch {}
-      throw new Error(errMsg.trim().substring(0, 300));
+      for (const a of attempts) {
+        loadingMessage.textContent = `⚡ ${a.n} → ${spaceId.split('/')[1]}`;
+        loadingSub.textContent = 'HF api-inference.huggingface.co';
+        try {
+          const resp = await hfFetch(a.b);
+          if (resp.status === 200) {
+            const blob = await resp.blob();
+            if (blob.size >= 500) return URL.createObjectURL(blob);
+            continue;
+          }
+          if (resp.status === 503) {
+            loadingMessage.textContent = '🔄 Modele en chargement…';
+            for (let r = 0; r < 5; r++) {
+              await new Promise(s => setTimeout(s, 10000));
+              loadingSub.textContent = `Tentative ${r + 2}/5…`;
+              const r2 = await hfFetch(a.b);
+              if (r2.status === 200) {
+                const blob = await r2.blob();
+                if (blob.size >= 500) return URL.createObjectURL(blob);
+              }
+            }
+            continue;
+          }
+          if (resp.status === 400 || resp.status === 404) continue;
+          const txt = await resp.text().catch(() => 'err');
+          let err; try { err = JSON.parse(txt).error || txt; } catch { err = txt; }
+          if (resp.status === 401 || resp.status === 403) throw new Error(err);
+          throw new Error(err);
+        } catch (e) {
+          if (e.message === 'timeout') { continue; }
+          throw e;
+        }
+      }
+      throw new Error(`Tous les formats echoues pour ${spaceId}. Verifiez le token et le modele.`);
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
