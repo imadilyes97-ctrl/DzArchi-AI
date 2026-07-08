@@ -978,22 +978,7 @@
       const file = e.dataTransfer?.files?.[0];
       if (file) handleFile(file);
     });
-    let dragCounter = 0;
-    document.addEventListener('dragenter', () => {
-      dragCounter++;
-      if (!state.currentFile) dropZone.classList.add('dragover');
-    });
-    document.addEventListener('dragleave', () => {
-      dragCounter--;
-      if (dragCounter === 0) dropZone.classList.remove('dragover');
-    });
-    document.addEventListener('dragover', (e) => e.preventDefault());
-    document.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dragCounter = 0;
-      dropZone.classList.remove('dragover');
-      if (e.dataTransfer?.files?.length) handleFile(e.dataTransfer.files[0]);
-    });
+
     // ─── État du bouton Générer ─────────────────────────────────────────
     function updateGenerateButton() {
       generateBtn.disabled = !state.currentFile || state.isGenerating;
@@ -1456,19 +1441,6 @@
         }
       }
 
-      cleanLoading();
-      state.isGenerating = false;
-      resetToEmpty();
-    }
-            return;
-          }
-
-          // Space suivant (fallback)
-          continue;
-        }
-      }
-
-      // Sécurité : ne devrait jamais arriver
       cleanLoading();
       state.isGenerating = false;
       resetToEmpty();
