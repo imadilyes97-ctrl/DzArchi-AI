@@ -1499,104 +1499,13 @@
       return [imageBlob, prompt];
     }
 
-    // ─── Appel REST direct Space Gradio (CORS supporté par HF Spaces) ──
-    // Les Spaces HF ont CORS activé. API: stabilityai-sd-2-1.hf.space/api/predict/
-    async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
-      const imageBase64 = await fileToBase64(imageFile).catch(() => null);
-      const imageData = imageBase64 ? imageBase64.split(',')[1] : null;
-
-      // Domaine du Space
-      const [username, name] = spaceId.split('/');
-      const base = `${username}-${name.replace(/\./g, '-')}`.toLowerCase();
-      const domain = `${base}.hf.space`;
-
-      // Helper fetch avec timeout
-      const df = async (url, opts, ms) => {
-        const c = new AbortController();
-        const t = setTimeout(() => c.abort(), ms);
-        try { return await fetch(url, { ...opts, signal: c.signal }); }
-        finally { clearTimeout(t); }
-      };
-
-      // Récupérer l'image depuis un résultat Gradio
-      const extractAndFetch = async (result, domain) => {
-        const img = extractImageFromGradioData(result);
-        if (!img) return null;
-        const abs = img.startsWith('http') ? img : `https://${domain}/${img.replace(/^\//, '')}`;
-        const r = await fetch(abs);
-        if (!r.ok) return null;
-        const b = await r.blob();
-        return b.size >= 500 ? URL.createObjectURL(b) : null;
-      };
-
-      // ── 1) Gradio 4.x streaming ──
-      loadingSub.textContent = 'Gradio4x call…';
-      try {
-        loadingMessage.textContent = `⚡ Gradio4 call → ${name}`;
-        const r = await df(`https://${domain}/gradio_api/call/predict`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: [imageData, prompt] }),
-        }, 30000);
-        if (r?.ok) {
-          const { event_id } = await r.json();
-          if (event_id) {
-            for (let p = 0; p < 30; p++) {
-              await new Promise(s => setTimeout(s, 2000));
-              const d = await df(`https://${domain}/gradio_api/data/predict/${event_id}`, {}, 10000);
-              if (d?.ok) {
-                const blob = await extractAndFetch(await d.json(), domain);
-                if (blob) return blob;
-              }
-            }
-          }
-        }
-      } catch {}
-
-      // ── 2) Gradio 3.x api/predict/ ──
-      loadingSub.textContent = 'Gradio3x predict…';
-      try {
-        loadingMessage.textContent = `⚡ Gradio3 predict → ${name}`;
-        const r = await df(`https://${domain}/api/predict/`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: [imageData, prompt] }),
-        }, 45000);
-        if (r?.ok) {
-          const blob = await extractAndFetch(await r.json(), domain);
-          if (blob) return blob;
-        }
-      } catch {}
-
-      // ── 3) txt2img fallback ──
-      loadingSub.textContent = 'txt2img…';
-      try {
-        loadingMessage.textContent = `⚡ txt2img → ${name}`;
-        const r = await df(`https://${domain}/api/predict/`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: [prompt] }),
-        }, 45000);
-        if (r?.ok) {
-          const blob = await extractAndFetch(await r.json(), domain);
-          if (blob) return blob;
-        }
-      } catch {}
-
-      throw new Error('Space ' + spaceId + ' inaccessible. Verifiez sur huggingface.co/spaces/' + spaceId + ' que le Space est "Running".');
-    }
-
-    // ─── Point d'entrée de la génération ────────────────────────────────
+    // ─── Point d'entrée de la génération (UNIQUE, @gradio/client) ────
     async function handleGenerate() {
       if (!state.currentFile || state.isGenerating) return;
 
-      // Sauvegarder le token dans localStorage
+      // Sauvegarder le token
       const hfToken = hfTokenInput.value.trim();
-      if (hfToken) {
-        try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
-      }
-
-      // Avertir si file:// protocol
-      if (IS_FILE_PROTOCOL) {
-        showToast('💡 Ouvrir avec "npx serve" ou Live Server pour de meilleurs résultats (CORS)', 'info', 8000);
-      }
+      if (hfToken) try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
 
       state.isGenerating = true;
       const cleanLoading = startLoadingMessages();
@@ -1605,159 +1514,103 @@
       const userSpace = spaceInput.value.trim();
       const basePrompt = buildEnhancedPrompt();
 
-      // ── AVEC TOKEN : API Inference HF d'abord (rapide, pas de CORS) ──
-      if (hfToken) {
-        state.abortController = new AbortController();
-        // Construire la liste des modèles à essayer (user + fallbacks)
-        const modelsToTry = [];
-        if (userSpace) modelsToTry.push(userSpace);
-        CONFIG.DEFAULT_SPACES.forEach(s => modelsToTry.push(s.id));
+      // Construire la liste des Spaces à essayer (user + defaults)
+      // On retire les models qui ne sont PAS des Spaces (que des vrais Gradio Spaces)
+      const spaceList = [];
+      if (userSpace) spaceList.push({ id: userSpace });
+      spaceList.push(
+        { id: 'stabilityai/stable-diffusion-2-1' },
+        { id: 'stabilityai/stable-diffusion-xl-base-1-0' },
+        { id: 'runwayml/stable-diffusion-v1-5' },
+        { id: 'stabilityai/stable-diffusion-3-5-large' },
+      );
 
-        let lastApiError = null;
-
-        for (let mi = 0; mi < modelsToTry.length; mi++) {
-          const modelId = modelsToTry[mi];
-          if (mi > 0) {
-            loadingMessage.textContent = `🔄 Fallback → ${modelsToTry[mi]}`;
-            loadingSub.textContent = 'Modèle précédent indisponible';
-            await new Promise(r => setTimeout(r, 500));
-          }
-          try {
-            showToast(`🚀 API HF → ${modelId}`, 'info', 3000);
-            loadingMessage.textContent = `⚡ ${modelId}`;
-            loadingSub.textContent = 'Génération via API INF HF…';
-
-            const imageUrl = await callHfInferenceApi(modelId, basePrompt, state.currentFile, hfToken);
-
-            cleanLoading();
-            state.isGenerating = false;
-            showSuccessState(imageUrl);
-            showToast('🎉 Rendu 3D généré avec succès !', 'success', 5000);
-            return;
-
-          } catch (error) {
-            lastApiError = error;
-            console.warn(`HF model ${modelId} failed:`, error.message);
-          }
-        }
-
-        // Tous les modèles API Inference ont échoué
-        cleanLoading();
-        state.isGenerating = false;
-        showErrorState('❌ API Inference', lastApiError?.message || 'Tous les modèles ont échoué');
-        showToast(lastApiError?.message || 'Erreur API HF', 'error', 8000);
-        return;
-      } else {
-        showToast('💡 Ajoutez un token HF (paramètres) pour une génération 10× plus rapide !', 'info', 5000);
-      }
-
-      // ── SANS TOKEN / FALLBACK : @gradio/client + REST ──
-      // Construire la liste des Spaces (user + fallbacks)
-      const spacesToTry = [];
-      if (userSpace) {
-        spacesToTry.push({ id: userSpace, name: userSpace.split('/')[1] || userSpace, type: 'custom' });
-      }
-      spacesToTry.push(...CONFIG.DEFAULT_SPACES);
-
+      // Essayer chaque Space via @gradio/client (WebSocket = pas de CORS)
       let lastError = null;
 
-      for (let i = 0; i < spacesToTry.length; i++) {
-        const spaceInfo = spacesToTry[i];
-
+      for (let i = 0; i < spaceList.length; i++) {
+        const spaceId = spaceList[i].id;
         if (i > 0) {
-          const shortName = spaceInfo.name || spaceInfo.id.split('/')[1];
-          loadingMessage.textContent = `🔄 Fallback → ${shortName}...`;
-          loadingSub.textContent = 'Le serveur précédent était indisponible';
-          await new Promise(r => setTimeout(r, 1500));
+          loadingMessage.textContent = `🔄 Fallback → ${spaceId}`;
+          loadingSub.textContent = 'Space precedent indisponible';
+          await new Promise(r => setTimeout(r, 500));
         }
 
         try {
-          showToast(`🚀 Connexion à ${spaceInfo.name || spaceInfo.id}...`, 'info', 3000);
+          showToast(`🚀 ${spaceId}`, 'info', 3000);
+          loadingMessage.textContent = `⚡ ${spaceId.split('/')[1]}`;
+          loadingSub.textContent = 'WebSocket @gradio/client…';
 
-          const imageUrl = await tryGenerate(spaceInfo, state.currentFile, basePrompt, 0);
+          // Connexion @gradio/client (pas de CORS — utilise WebSocket)
+          const connectOpts = {};
+          if (hfToken) connectOpts.auth = [hfToken, ''];
+          const client = await Client.connect(spaceId, connectOpts);
+
+          // Decouvrir les endpoints
+          let endpoints = [];
+          try {
+            const apiInfo = await client.view_api();
+            if (apiInfo?.named_endpoints) {
+              endpoints = Object.entries(apiInfo.named_endpoints).map(([n, info]) => ({
+                fn: '/' + n.replace(/^\//, ''),
+                discovered: true,
+              }));
+            }
+          } catch {
+            endpoints = [{ fn: '/predict' }, { fn: '/run' }, { fn: '/generate' }];
+          }
+
+          // Essayer chaque endpoint
+          let imageUrl = null;
+          for (const ep of endpoints) {
+            loadingSub.textContent = `→ ${ep.fn}`;
+            try {
+              const params = buildGradioParams(ep, basePrompt, state.currentFile);
+              const result = await client.predict(ep.fn, params);
+              if (result?.data) {
+                imageUrl = extractImageFromResponse(result.data) ||
+                           extractImageFromGradioData(result.data);
+                if (imageUrl) break;
+              }
+            } catch {}
+          }
+
+          if (!imageUrl) throw new Error('Aucun endpoint valide');
+
+          // Resoudre l'URL et telecharger l'image
+          let finalUrl = imageUrl;
+          if (!finalUrl.startsWith('http') && !finalUrl.startsWith('data:')) {
+            const [user, space] = spaceId.split('/');
+            const domain = `${user}-${space.replace(/\./g, '-')}`.toLowerCase();
+            finalUrl = `https://${domain}.hf.space/${finalUrl.replace(/^\//, '')}`;
+          }
+          if (finalUrl.startsWith('http')) {
+            const r = await fetch(finalUrl);
+            if (r.ok) finalUrl = URL.createObjectURL(await r.blob());
+          }
 
           cleanLoading();
           state.isGenerating = false;
-
-          let finalUrl = imageUrl;
-          if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-            const parts = spaceInfo.id.split('/');
-            const username = parts[0].toLowerCase();
-            const spacename = parts[1].toLowerCase().replace(/[^a-z0-9]/g, '-');
-            finalUrl = `https://${username}-${spacename}.hf.space/${imageUrl.replace(/^\//, '')}`;
-          }
-
           showSuccessState(finalUrl);
-          showToast('🎉 Rendu 3D généré avec succès !', 'success', 5000);
+          showToast('🎉 Rendu 3D genere avec succes !', 'success', 5000);
           return;
 
         } catch (error) {
           lastError = error;
-          console.warn(`Space ${spaceInfo.id} failed:`, error.message);
-
-          // Log complet pour diagnostic
-          console.error('DzArchi error:', {
-            space: spaceInfo.id,
-            name: error.name,
-            message: error.message,
-          });
-
-          const msg = error.message?.toLowerCase() || '';
-          let errorType = 'generic';
-          if (msg.includes('timeout') || msg.includes('abort')) errorType = 'timeout';
-          else if (msg.includes('sleep') || msg.includes('pause') || msg.includes('loading') || msg.includes('space is') || msg.includes('cold')) errorType = 'sleeping';
-          else if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('too many')) errorType = 'quota';
-          else if (msg.includes('404') || msg.includes('not found') || msg.includes('endpoint')) errorType = 'endpoint';
-          else if (msg.includes('cors') || msg.includes('block') || msg.includes('cross-origin') || msg.includes('failed to fetch')) errorType = 'cors';
-          else if (msg.includes('network') || msg.includes('fetch') || msg.includes('en-tête') || msg.includes('header')) errorType = 'network';
-          else if (msg.includes('extract') || msg.includes('format') || msg.includes('inconnu') || msg.includes('unknown')) errorType = 'endpoint';
-
-          if (i === spacesToTry.length - 1) {
-            cleanLoading();
-            state.isGenerating = false;
-
-            const errors = {
-              timeout: {
-                title: '⏱ Délai dépassé (3 min)',
-                message: 'Les serveurs gratuits mettent trop de temps à répondre (ZeroGPU cold start). Réessayez dans quelques minutes ou configurez un Space ID personnalisé dans les paramètres.'
-              },
-              sleeping: {
-                title: '💤 Spaces en veille',
-                message: "Tous les Spaces testés sont en veille ou en démarrage. Ouvrez-en un sur huggingface.co pour le réveiller, ou patientez quelques minutes."
-              },
-              cors: {
-                title: '🔒 CORS bloqué',
-                message: "Le navigateur bloque les connexions directes aux Spaces HF. Solution : utilisez le champ 🔑 Token HF dans les paramètres pour une génération 10× plus rapide (API Inference sans CORS)."
-
-              },
-              network: {
-                title: '🌐 Erreur réseau',
-                message: 'Impossible de contacter les serveurs Hugging Face. Vérifiez votre connexion Internet.'
-              },
-              generic: {
-                title: '❌ Échec de génération',
-                message: `${error.message || 'Erreur inconnue'}. 🔑 Solution : ajoutez votre token HF gratuit dans les paramètres pour une génération rapide et fiable.`
-              }
-            };
-
-            const err = errors[errorType] || errors.generic;
-            showErrorState(err.title, err.message);
-
-            if (IS_FILE_PROTOCOL && errorType === 'cors') {
-              showToast('🔧 Solution : tapez "npx serve" dans le terminal, ou utilisez Live Server VS Code', 'info', 10000);
-            }
-
-            showToast(err.title, 'error', 6000);
-            return;
-          }
-
-          continue;
+          console.warn(`Space ${spaceId} failed:`, error.message);
         }
       }
 
       cleanLoading();
       state.isGenerating = false;
-      resetToEmpty();
+
+      const msg = lastError?.message || 'Tous les Spaces sont indisponibles';
+      let title = 'Erreur de generation';
+      if (msg.toLowerCase().includes('timeout')) title = 'Délai depasse';
+      else if (msg.toLowerCase().includes('cors') || msg.toLowerCase().includes('fetch')) title = 'Erreur reseau';
+
+      showErrorState(title, msg + '. Assurez-vous que les Spaces HF sont "Running" sur huggingface.co.');
+      showToast(title, 'error', 6000);
     }
 
     // ─── Événements des boutons ─────────────────────────────────────────
