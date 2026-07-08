@@ -1499,62 +1499,88 @@
       return [imageBlob, prompt];
     }
 
-    // ─── Appel DIRECT à l'API Inference HF (navigateur → HF) ──────────
+    // ─── Appel REST direct Space Gradio (CORS supporté par HF Spaces) ──
+    // Les Spaces HF ont CORS activé. API: stabilityai-sd-2-1.hf.space/api/predict/
     async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
       const imageBase64 = await fileToBase64(imageFile).catch(() => null);
       const imageData = imageBase64 ? imageBase64.split(',')[1] : null;
 
-      const hfFetch = (body, ms = 60000) => Promise.race([
-        fetch(`https://api-inference.huggingface.co/models/${spaceId}`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms)),
-      ]);
+      // Domaine du Space
+      const [username, name] = spaceId.split('/');
+      const base = `${username}-${name.replace(/\./g, '-')}`.toLowerCase();
+      const domain = `${base}.hf.space`;
 
-      const attempts = [];
-      if (imageData) {
-        attempts.push({ n: 'img2img', b: { inputs: prompt, image: imageData } });
-        attempts.push({ n: 'img2img-v2', b: { inputs: prompt, parameters: { image: imageData } } });
-        attempts.push({ n: 'img2img-uri', b: { inputs: prompt, image: imageBase64 } });
-      }
-      attempts.push({ n: 'txt2img', b: { inputs: prompt } });
+      // Helper fetch avec timeout
+      const df = async (url, opts, ms) => {
+        const c = new AbortController();
+        const t = setTimeout(() => c.abort(), ms);
+        try { return await fetch(url, { ...opts, signal: c.signal }); }
+        finally { clearTimeout(t); }
+      };
 
-      for (const a of attempts) {
-        loadingMessage.textContent = `⚡ ${a.n} → ${spaceId.split('/')[1]}`;
-        loadingSub.textContent = 'HF api-inference.huggingface.co';
-        try {
-          const resp = await hfFetch(a.b);
-          if (resp.status === 200) {
-            const blob = await resp.blob();
-            if (blob.size >= 500) return URL.createObjectURL(blob);
-            continue;
-          }
-          if (resp.status === 503) {
-            loadingMessage.textContent = '🔄 Modele en chargement…';
-            for (let r = 0; r < 5; r++) {
-              await new Promise(s => setTimeout(s, 10000));
-              loadingSub.textContent = `Tentative ${r + 2}/5…`;
-              const r2 = await hfFetch(a.b);
-              if (r2.status === 200) {
-                const blob = await r2.blob();
-                if (blob.size >= 500) return URL.createObjectURL(blob);
+      // Récupérer l'image depuis un résultat Gradio
+      const extractAndFetch = async (result, domain) => {
+        const img = extractImageFromGradioData(result);
+        if (!img) return null;
+        const abs = img.startsWith('http') ? img : `https://${domain}/${img.replace(/^\//, '')}`;
+        const r = await fetch(abs);
+        if (!r.ok) return null;
+        const b = await r.blob();
+        return b.size >= 500 ? URL.createObjectURL(b) : null;
+      };
+
+      // ── 1) Gradio 4.x streaming ──
+      loadingSub.textContent = 'Gradio4x call…';
+      try {
+        loadingMessage.textContent = `⚡ Gradio4 call → ${name}`;
+        const r = await df(`https://${domain}/gradio_api/call/predict`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: [imageData, prompt] }),
+        }, 30000);
+        if (r?.ok) {
+          const { event_id } = await r.json();
+          if (event_id) {
+            for (let p = 0; p < 30; p++) {
+              await new Promise(s => setTimeout(s, 2000));
+              const d = await df(`https://${domain}/gradio_api/data/predict/${event_id}`, {}, 10000);
+              if (d?.ok) {
+                const blob = await extractAndFetch(await d.json(), domain);
+                if (blob) return blob;
               }
             }
-            continue;
           }
-          if (resp.status === 400 || resp.status === 404) continue;
-          const txt = await resp.text().catch(() => 'err');
-          let err; try { err = JSON.parse(txt).error || txt; } catch { err = txt; }
-          if (resp.status === 401 || resp.status === 403) throw new Error(err);
-          throw new Error(err);
-        } catch (e) {
-          if (e.message === 'timeout') { continue; }
-          throw e;
         }
-      }
-      throw new Error(`Tous les formats echoues pour ${spaceId}. Verifiez le token et le modele.`);
+      } catch {}
+
+      // ── 2) Gradio 3.x api/predict/ ──
+      loadingSub.textContent = 'Gradio3x predict…';
+      try {
+        loadingMessage.textContent = `⚡ Gradio3 predict → ${name}`;
+        const r = await df(`https://${domain}/api/predict/`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: [imageData, prompt] }),
+        }, 45000);
+        if (r?.ok) {
+          const blob = await extractAndFetch(await r.json(), domain);
+          if (blob) return blob;
+        }
+      } catch {}
+
+      // ── 3) txt2img fallback ──
+      loadingSub.textContent = 'txt2img…';
+      try {
+        loadingMessage.textContent = `⚡ txt2img → ${name}`;
+        const r = await df(`https://${domain}/api/predict/`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: [prompt] }),
+        }, 45000);
+        if (r?.ok) {
+          const blob = await extractAndFetch(await r.json(), domain);
+          if (blob) return blob;
+        }
+      } catch {}
+
+      throw new Error('Space ' + spaceId + ' inaccessible. Verifiez sur huggingface.co/spaces/' + spaceId + ' que le Space est "Running".');
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
