@@ -1535,13 +1535,11 @@
         throw new Error(text.substring(0, 200) || 'Réponse inattendue du serveur');
       }
 
-      // Erreur : lire le JSON d'erreur
-      const errData = await response.json().catch(async () => {
-        const text = await response.text().catch(() => 'inconnue');
-        return { error: text.substring(0, 300) };
-      });
-
-      throw new Error(errData.error || `HTTP ${response.status}`);
+      // Erreur : lire le body en TEXTE d'abord, puis parser JSON
+      const errText = await response.text().catch(() => 'inconnue');
+      let errMsg = errText;
+      try { const j = JSON.parse(errText); errMsg = j.error || errText; } catch {}
+      throw new Error(errMsg.trim().substring(0, 300));
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
