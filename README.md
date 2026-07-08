@@ -22,12 +22,38 @@ Transformez vos plans 2D en perspectives 3D photoréalistes via l'IA générativ
 
 ## 🔧 Configuration avancée
 
+### 🤗 Token Hugging Face (RECOMMANDÉ)
+
+L'API Inference Hugging Face est **beaucoup plus fiable** que les Spaces Gradio gratuits :
+- ✅ Pas de mise en veille (cold start géré automatiquement)
+- ✅ Réponse en 10-30s au lieu de 1-3 min
+- ✅ Fallback automatique entre modèles
+
+1. Créez un token gratuit sur [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. Copiez-le dans le champ **🔑 Token Hugging Face** dans l'interface
+3. Les générations passeront par l'API Inference (prioritaire)
+
+_Sans token, le système utilise les Spaces Gradio en fallback (plus lent, cold start 1-3 min)._
+
+### Space ID personnalisé
+
 Vous pouvez utiliser votre propre Space Hugging Face en modifiant le champ **Space ID** dans l'interface.
 
-**Spaces par défaut :**
-- `stabilityai/stable-diffusion-3.5-large`
-- `black-forest-labs/FLUX.1-schnell`
+**Spaces par défaut (fallback Gradio) :**
+- `stabilityai/stable-diffusion-2-1`
 - `stabilityai/stable-diffusion-xl-base-1.0`
+- `runwayml/stable-diffusion-v1-5`
+- `black-forest-labs/FLUX.1-schnell`
+
+### Cloudflare Worker (proxy HF)
+
+Un proxy Cloudflare Worker est disponible dans `worker/` pour les déploiements où le CORS bloque les appels directs :
+
+```bash
+cd worker
+npm install -g wrangler
+wrangler deploy
+```
 
 ## 🛠 Stack
 
