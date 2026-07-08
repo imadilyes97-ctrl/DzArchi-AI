@@ -1504,7 +1504,10 @@
     async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
       // Lire l'image en base64
       const imageBase64 = await fileToBase64(imageFile).catch(() => null);
+      // Envoyer l'image en base64 brute (sans le prefixe data:image/...)
       const imageData = imageBase64 ? imageBase64.split(',')[1] : null;
+      // Aussi essayer avec le prefixe dans certains appels
+      const imageDataUri = imageBase64;
 
       loadingSub.textContent = 'Proxy Vercel → API HF…';
 
@@ -1515,6 +1518,7 @@
           spaceId,
           prompt,
           image: imageData,
+          imageUri: imageBase64,
           token,
         }),
         signal: state.abortController?.signal,
