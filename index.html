@@ -1173,9 +1173,11 @@
           return tryDirectRest(spaceId, imageFile, prompt);
         }
 
-        // Extraction de l'image du résultat
+        // Extraction de l'image du résultat (multi-format)
         const data = result.data;
-        let imageUrl = extractImageFromResponse(data);
+        // Priorité : extractImageFromResponse (handle FileData @gradio/client + Gradio 3.x)
+        // → extractImageFromGradioData (handle Gradio 4.x nested events)
+        let imageUrl = extractImageFromResponse(data) || extractImageFromGradioData(data);
 
         if (!imageUrl) {
           throw new Error("L'image n'a pas pu être extraite de la réponse. Le Space a répondu mais le format est inconnu.");
@@ -1361,6 +1363,9 @@
     function extractImageFromGradioData(data) {
       if (!data) return null;
 
+      // @gradio/client FileData format: [{url: "...", is_file: true, ...}]
+      if (Array.isArray(data) && data[0]?.url) return data[0].url;
+
       // Format Gradio 4.x events: [{data: [...]}, ...]
       if (Array.isArray(data) && data[0]?.data) {
         return extractImageFromArray(data[0].data);
@@ -1431,6 +1436,7 @@
         return null;
       }
       if (data?.url) return data.url;
+      if (data?.data?.url) return data.data.url; // Gradio 4.x nested FileData
       if (data?.image?.url) return data.image.url;
       if (data?.image && typeof data.image === 'string') return data.image;
       if (data?.path) return `file=${data.path}`;
@@ -1468,7 +1474,8 @@
         return params;
       }
       // Fallback : image en premier, prompt en second (ordre Gradio standard)
-      return { data: [imageBlob, prompt] };
+      // NOTE: Array simple pour @gradio/client predict(), PAS {data: [...]} (format REST)
+      return [imageBlob, prompt];
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
@@ -1530,6 +1537,13 @@
           lastError = error;
           console.warn(`Space ${spaceInfo.id} failed:`, error.message);
 
+          // Log complet pour diagnostic
+          console.error('DzArchi error:', {
+            space: spaceInfo.id,
+            name: error.name,
+            message: error.message,
+          });
+
           const msg = error.message?.toLowerCase() || '';
           let errorType = 'generic';
           if (msg.includes('timeout') || msg.includes('abort')) errorType = 'timeout';
@@ -1537,7 +1551,8 @@
           else if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('too many')) errorType = 'quota';
           else if (msg.includes('404') || msg.includes('not found') || msg.includes('endpoint')) errorType = 'endpoint';
           else if (msg.includes('cors') || msg.includes('block') || msg.includes('cross-origin') || msg.includes('failed to fetch')) errorType = 'cors';
-          else if (msg.includes('network') || msg.includes('fetch')) errorType = 'network';
+          else if (msg.includes('network') || msg.includes('fetch') || msg.includes('en-tête') || msg.includes('header')) errorType = 'network';
+          else if (msg.includes('extract') || msg.includes('format') || msg.includes('inconnu') || msg.includes('unknown')) errorType = 'endpoint';
 
           if (i === spacesToTry.length - 1) {
             cleanLoading();
@@ -1554,7 +1569,8 @@
               },
               cors: {
                 title: '🔒 CORS bloqué',
-                message: "Le navigateur bloque les connexions aux serveurs HF depuis un fichier local (file://). Solution : utilisez 'npx serve' dans ce dossier, ou ouvrez avec Live Server VS Code."
+                message: "Le navigateur bloque les connexions aux serveurs HF. Ouvrez d'abord les Spaces HF dans votre navigateur pour les réveiller, ou utilisez le token HF dans les paramètres. Depuis Vercel, les appels REST directs sont limités."
+
               },
               network: {
                 title: '🌐 Erreur réseau',
@@ -1562,7 +1578,7 @@
               },
               generic: {
                 title: '❌ Échec de génération',
-                message: `${error.message || 'Erreur inconnue'}. Vérifiez que le Space ID est correct et que le Space est "Running" sur Hugging Face.`
+                message: `${error.message || 'Erreur inconnue'}. Vérifiez que les Spaces HF sont "Running" (huggingface.co).`
               }
             };
 
