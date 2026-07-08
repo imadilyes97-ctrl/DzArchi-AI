@@ -1499,131 +1499,49 @@
       return [imageBlob, prompt];
     }
 
-    // ─── Appel à l'API Inference Hugging Face (rapide, pas de cold start) ──
-    // Nécessite un token HF : https://huggingface.co/settings/tokens
+    // ─── Appel à l'API HF via proxy Vercel (pas de CORS) ─────────────────
+    // Le proxy tourne sur le même domaine : pas de blocage navigateur
     async function callHfInferenceApi(spaceId, prompt, imageFile, token) {
-      // Lire l'image en base64 pour les appels JSON
+      // Lire l'image en base64
       const imageBase64 = await fileToBase64(imageFile).catch(() => null);
       const imageData = imageBase64 ? imageBase64.split(',')[1] : null;
 
-      // Helper : fetch avec timeout ET abort (sinon la requête continue en fond)
-      const fetchWithTimeout = (url, options, ms = 90000) => {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), ms);
-        return fetch(url, { ...options, signal: ctrl.signal })
-          .finally(() => clearTimeout(timer));
-      };
+      loadingSub.textContent = 'Proxy Vercel → API HF…';
 
-      // Helper : lire le body JSON pour l'erreur (si possible)
-      const parseError = async (resp) => {
-        try {
-          const text = await resp.text();
-          try { const j = JSON.parse(text); return j.error || text.substring(0, 300); }
-          catch { return text.substring(0, 300); }
-        } catch { return `HTTP ${resp.status}`; }
-      };
+      const response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          prompt,
+          image: imageData,
+          token,
+        }),
+        signal: state.abortController?.signal,
+      });
 
-      // Helper : exécuter une requête formatée — retourne { ok, blob } ou throw
-      async function tryFormat(makeRequest) {
-        const response = await fetchWithTimeout(makeRequest.url(), makeRequest.opts(), 90000);
+      // Lire la réponse
+      const contentType = response.headers.get('content-type') || '';
 
-        // 503 = model loading → retry avec backoff
-        if (response.status === 503) {
-          loadingMessage.textContent = '🔄 Modèle en chargement…';
-          loadingSub.textContent = 'Premier appel (20-60s)…';
-          for (let r = 0; r < 5; r++) {
-            await new Promise(s => setTimeout(s, 10000));
-            loadingSub.textContent = `Tentative ${r + 2}/5…`;
-            const retryResp = await fetchWithTimeout(makeRequest.url(), makeRequest.opts(), 90000);
-            if (retryResp.status === 200) {
-              const blob = await retryResp.blob();
-              if (blob.size > 500) return URL.createObjectURL(blob);
-            }
-            if (retryResp.status !== 503) {
-              // Si ce n'est plus 503, on ne retry pas ici
-              const errText = await parseError(retryResp);
-              throw new Error(errText || `HTTP ${retryResp.status}`);
-            }
-          }
-          throw new Error('Modèle trop long à charger sur API Inference');
-        }
-
-        // 200 = succès → retourner l'image
-        if (response.status === 200) {
+      if (response.ok) {
+        // Succès : c'est une image
+        if (contentType.includes('image')) {
           const blob = await response.blob();
-          if (blob.size < 500) throw new Error('Image générée vide ou trop petite');
-          return URL.createObjectURL(blob);
+          if (blob.size > 500) return URL.createObjectURL(blob);
+          throw new Error('Image générée vide');
         }
-
-        // Erreur
-        throw new Error(await parseError(response));
+        // Succès mais pas une image (normalement jamais)
+        const text = await response.text().catch(() => '');
+        throw new Error(text.substring(0, 200) || 'Réponse inattendue du serveur');
       }
 
-      // ── Format 1 : img2img via JSON (image en base64 dans le body) ──
-      // Meilleur support pour modèles qui gèrent img2img
-      const fmt1 = {
-        name: 'img2img JSON',
-        url: () => `https://api-inference.huggingface.co/models/${spaceId}`,
-        opts: () => ({
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inputs: prompt, image: imageData }),
-        }),
-      };
+      // Erreur : lire le JSON d'erreur
+      const errData = await response.json().catch(async () => {
+        const text = await response.text().catch(() => 'inconnue');
+        return { error: text.substring(0, 300) };
+      });
 
-      // ── Format 2 : img2img via JSON simple (inputs+image séparés) ──
-      // Certains modèles HF attendent ce format
-      const fmt2 = {
-        name: 'img2img JSON v2',
-        url: () => `https://api-inference.huggingface.co/models/${spaceId}`,
-        opts: () => ({
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: { image: imageData },
-          }),
-        }),
-      };
-
-      // ── Format 3 : img2img via FormData ──
-      const fmt3 = {
-        name: 'img2img multipart',
-        url: () => `https://api-inference.huggingface.co/models/${spaceId}`,
-        opts: () => {
-          const fd = new FormData();
-          fd.append('image', imageFile, 'floorplan.png');
-          fd.append('inputs', prompt);
-          return { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd };
-        },
-      };
-
-      // ── Format 4 : text-to-image (JSON, pas d'image) ──
-      const fmt4 = {
-        name: 'text-to-image',
-        url: () => `https://api-inference.huggingface.co/models/${spaceId}`,
-        opts: () => ({
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inputs: prompt }),
-        }),
-      };
-
-      const formats = [fmt1, fmt2, fmt3, fmt4];
-      let lastError = null;
-
-      for (const fmt of formats) {
-        loadingSub.textContent = `Format : ${fmt.name}`;
-        try {
-          return await tryFormat(fmt);
-        } catch (err) {
-          lastError = err;
-          console.warn(`Format ${fmt.name} failed:`, err.message);
-        }
-      }
-
-      // Si tous les formats ont échoué, lever la dernière erreur
-      throw lastError || new Error('Aucun format API compatible trouvé pour ce modèle');
+      throw new Error(errData.error || `HTTP ${response.status}`);
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
@@ -1650,6 +1568,7 @@
 
       // ── AVEC TOKEN : API Inference HF d'abord (rapide, pas de CORS) ──
       if (hfToken) {
+        state.abortController = new AbortController();
         // Construire la liste des modèles à essayer (user + fallbacks)
         const modelsToTry = [];
         if (userSpace) modelsToTry.push(userSpace);
