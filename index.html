@@ -595,14 +595,12 @@
               <span id="uploadLabel">Plan 2D</span>
             </label>
 
-            <div id="dropZone" class="drop-zone mt-2">
-              <!-- Input file en overlay : capture directe du clic — méthode la plus fiable cross-browser -->
+            <div id="dropZone" class="drop-zone mt-2" style="cursor:pointer;">
               <input type="file" id="fileInput" accept="image/png,image/jpeg"
-                style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:10;border:none;"
-                title="Cliquez pour importer un plan" />
+                style="display:none;" />
 
-              <!-- État vide -->
-              <div id="emptyState" class="space-y-3" style="position:relative;z-index:0;pointer-events:none;">
+              <!-- État vide (pas d'image) -->
+              <div id="emptyState" class="space-y-3">
                 <div class="drop-icon w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <svg class="w-7 h-7 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -612,19 +610,19 @@
                 </div>
                 <div>
                   <p class="text-sm font-semibold text-slate-300">
-                    <span class="text-indigo-400">Cliquez pour parcourir</span>
+                    <span id="browseText" style="color:#818cf8;cursor:pointer;">Cliquez pour parcourir</span>
                     <span class="text-slate-500"> ou glissez-déposez</span>
                   </p>
                   <p class="text-xs text-slate-600 mt-1">PNG ou JPG — max 10 Mo</p>
                 </div>
               </div>
 
-              <!-- Aperçu image -->
-              <div id="previewState" class="hidden relative" style="position:relative;z-index:0;pointer-events:none;">
-                <div class="relative rounded-xl overflow-hidden bg-surface-300/50">
+              <!-- Aperçu image (après upload) -->
+              <div id="previewState" class="hidden relative">
+                <div style="position:relative;" class="rounded-xl overflow-hidden bg-surface-300/50">
                   <img id="imagePreview" class="w-full h-48 md:h-56 object-contain" alt="Aperçu du plan" />
-                  <button id="deleteImage"
-                    style="position:absolute;top:8px;right:8px;z-index:20;pointer-events:auto;"
+                  <button id="deleteImage" type="button"
+                    style="position:absolute;top:8px;right:8px;"
                     class="w-8 h-8 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-black/80 transition-all duration-200"
                     title="Supprimer l'image">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -852,6 +850,7 @@
     const previewState       = $('#previewState');
     const imagePreview       = $('#imagePreview');
     const deleteImage        = $('#deleteImage');
+    const browseText         = $('#browseText');
     const fileInfo           = $('#fileInfo');
     const generateBtn        = $('#generateBtn');
     const generateText       = $('#generateText');
@@ -944,9 +943,11 @@
     }
 
     // ─── Import fichier + Drag & Drop ────────────────────────────────────
-    // L'input file est en overlay transparent (opacity:0) couvrant toute la
-    // dropZone → le clic ouvre directement le sélecteur natif.
-    // Pas de .click() JS, cette approche est la plus fiable cross-browser.
+    // Clic sur la dropZone → déclenche le sélecteur de fichier (seulement si pas d'image déjà chargée)
+    dropZone.addEventListener('click', () => {
+      if (state.currentFile) return;
+      fileInput.click();
+    });
 
     fileInput.addEventListener('change', () => {
       if (fileInput.files?.length) {
@@ -960,7 +961,13 @@
       clearFile();
     });
 
-    // Drag enter / over (sur le document entier pour capturer les drops)
+    // Clic sur le texte "Cliquez pour parcourir" — stop propagation pour éviter le double-fire
+    browseText.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+
+    // Drag & Drop sur le document
     let dragCounter = 0;
     document.addEventListener('dragenter', () => {
       dragCounter++;
@@ -976,11 +983,6 @@
       dragCounter = 0;
       dropZone.classList.remove('dragover');
       if (e.dataTransfer?.files?.length) handleFile(e.dataTransfer.files[0]);
-    });
-      e.preventDefault();
-      dropZone.classList.remove('dragover');
-      const files = e.dataTransfer?.files;
-      if (files?.length) handleFile(files[0]);
     });
     // ─── État du bouton Générer ─────────────────────────────────────────
     function updateGenerateButton() {
