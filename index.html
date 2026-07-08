@@ -1499,11 +1499,10 @@
       return [imageBlob, prompt];
     }
 
-    // ─── Point d'entrée de la génération (UNIQUE, @gradio/client) ────
+    // ─── Point d'entrée de la génération ────────────────────────────────
     async function handleGenerate() {
       if (!state.currentFile || state.isGenerating) return;
 
-      // Sauvegarder le token
       const hfToken = hfTokenInput.value.trim();
       if (hfToken) try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
 
@@ -1514,23 +1513,20 @@
       const userSpace = spaceInput.value.trim();
       const basePrompt = buildEnhancedPrompt();
 
-      // Construire la liste des Spaces à essayer (user + defaults)
-      // On retire les models qui ne sont PAS des Spaces (que des vrais Gradio Spaces)
+      // Spaces a essayer (vrais Spaces Gradio publics)
       const spaceList = [];
       if (userSpace) spaceList.push({ id: userSpace });
       spaceList.push(
         { id: 'stabilityai/stable-diffusion-2-1' },
         { id: 'stabilityai/stable-diffusion-xl-base-1-0' },
         { id: 'runwayml/stable-diffusion-v1-5' },
-        { id: 'stabilityai/stable-diffusion-3-5-large' },
       );
 
-      // Essayer chaque Space via @gradio/client (WebSocket = pas de CORS)
       let lastError = null;
 
-      for (let i = 0; i < spaceList.length; i++) {
-        const spaceId = spaceList[i].id;
-        if (i > 0) {
+      for (let si = 0; si < spaceList.length; si++) {
+        const spaceId = spaceList[si].id;
+        if (si > 0) {
           loadingMessage.textContent = `🔄 Fallback → ${spaceId}`;
           loadingSub.textContent = 'Space precedent indisponible';
           await new Promise(r => setTimeout(r, 500));
@@ -1539,78 +1535,93 @@
         try {
           showToast(`🚀 ${spaceId}`, 'info', 3000);
           loadingMessage.textContent = `⚡ ${spaceId.split('/')[1]}`;
-          loadingSub.textContent = 'WebSocket @gradio/client…';
 
-          // Connexion @gradio/client (pas de CORS — utilise WebSocket)
-          const connectOpts = {};
-          if (hfToken) connectOpts.auth = [hfToken, ''];
-          const client = await Client.connect(spaceId, connectOpts);
+          // Domaine: stabilityai-stable-diffusion-2-1.hf.space
+          const [user, name] = spaceId.split('/');
+          const domain = `${user}-${name.replace(/\./g, '-')}`.toLowerCase();
+          const BASE = `https://${domain}.hf.space`;
 
-          // Decouvrir les endpoints
-          let endpoints = [];
+          // Convertir l'image en base64 pour l'API REST
+          const imgB64 = await fileToBase64(state.currentFile).catch(() => null);
+          const imgRaw = imgB64 ? imgB64.split(',')[1] : null;
+          const imgURI = imgB64;
+
+          // fetch avec timeout
+          const ff = async (url, opts, ms) => {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), ms);
+            try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
+            finally { clearTimeout(t); }
+          };
+
+          // Extraire image + fetch → blob URL
+          const getImg = async (respData) => {
+            const url = extractImageFromGradioData(respData) || extractImageFromResponse(respData);
+            if (!url) return null;
+            const abs = url.startsWith('http') ? url : `${BASE}/${url.replace(/^\//, '')}`;
+            const r = await ff(abs, {}, 15000);
+            return r?.ok ? URL.createObjectURL(await r.blob()) : null;
+          };
+
+          let result = null;
+
+          // 1) Gradio 4.x streaming
+          loadingSub.textContent = 'Gradio4 call…';
           try {
-            const apiInfo = await client.view_api();
-            if (apiInfo?.named_endpoints) {
-              endpoints = Object.entries(apiInfo.named_endpoints).map(([n, info]) => ({
-                fn: '/' + n.replace(/^\//, ''),
-                discovered: true,
-              }));
-            }
-          } catch {
-            endpoints = [{ fn: '/predict' }, { fn: '/run' }, { fn: '/generate' }];
-          }
-
-          // Essayer chaque endpoint
-          let imageUrl = null;
-          for (const ep of endpoints) {
-            loadingSub.textContent = `→ ${ep.fn}`;
-            try {
-              const params = buildGradioParams(ep, basePrompt, state.currentFile);
-              const result = await client.predict(ep.fn, params);
-              if (result?.data) {
-                imageUrl = extractImageFromResponse(result.data) ||
-                           extractImageFromGradioData(result.data);
-                if (imageUrl) break;
+            const r = await ff(`${BASE}/gradio_api/call/predict`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ data: [imgRaw, basePrompt] }),
+            }, 25000);
+            if (r?.ok) {
+              const { event_id } = await r.json();
+              if (event_id) {
+                for (let p = 0; p < 30; p++) {
+                  await new Promise(s => setTimeout(s, 2000));
+                  const d = await ff(`${BASE}/gradio_api/data/predict/${event_id}`, {}, 10000);
+                  if (d?.ok) { result = await getImg(await d.json()); if (result) break; }
+                }
               }
+            }
+          } catch {}
+
+          // 2) Gradio 3.x api/predict/
+          if (!result) {
+            loadingSub.textContent = '/api/predict/…';
+            try {
+              const r = await ff(`${BASE}/api/predict/`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: [imgRaw, basePrompt] }),
+              }, 45000);
+              if (r?.ok) result = await getImg(await r.json());
             } catch {}
           }
 
-          if (!imageUrl) throw new Error('Aucun endpoint valide');
-
-          // Resoudre l'URL et telecharger l'image
-          let finalUrl = imageUrl;
-          if (!finalUrl.startsWith('http') && !finalUrl.startsWith('data:')) {
-            const [user, space] = spaceId.split('/');
-            const domain = `${user}-${space.replace(/\./g, '-')}`.toLowerCase();
-            finalUrl = `https://${domain}.hf.space/${finalUrl.replace(/^\//, '')}`;
-          }
-          if (finalUrl.startsWith('http')) {
-            const r = await fetch(finalUrl);
-            if (r.ok) finalUrl = URL.createObjectURL(await r.blob());
+          // 3) txt2img fallback
+          if (!result) {
+            loadingSub.textContent = 'txt2img…';
+            try {
+              const r = await ff(`${BASE}/api/predict/`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: [basePrompt] }),
+              }, 45000);
+              if (r?.ok) result = await getImg(await r.json());
+            } catch {}
           }
 
-          cleanLoading();
-          state.isGenerating = false;
-          showSuccessState(finalUrl);
-          showToast('🎉 Rendu 3D genere avec succes !', 'success', 5000);
+          if (!result) throw new Error('Aucune image');
+
+          cleanLoading(); state.isGenerating = false;
+          showSuccessState(result);
+          showToast('🎉 Rendu 3D genere !', 'success', 5000);
           return;
 
-        } catch (error) {
-          lastError = error;
-          console.warn(`Space ${spaceId} failed:`, error.message);
-        }
+        } catch (e) { lastError = e; console.warn(spaceId, e.message); }
       }
 
-      cleanLoading();
-      state.isGenerating = false;
-
-      const msg = lastError?.message || 'Tous les Spaces sont indisponibles';
-      let title = 'Erreur de generation';
-      if (msg.toLowerCase().includes('timeout')) title = 'Délai depasse';
-      else if (msg.toLowerCase().includes('cors') || msg.toLowerCase().includes('fetch')) title = 'Erreur reseau';
-
-      showErrorState(title, msg + '. Assurez-vous que les Spaces HF sont "Running" sur huggingface.co.');
-      showToast(title, 'error', 6000);
+      cleanLoading(); state.isGenerating = false;
+      const msg = lastError?.message || 'Tous les Spaces indisponibles';
+      showErrorState('Erreur', msg + '. Reveillez les Spaces sur huggingface.co.');
+      showToast('Erreur', 'error', 6000);
     }
 
     // ─── Événements des boutons ─────────────────────────────────────────
