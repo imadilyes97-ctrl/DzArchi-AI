@@ -11,3 +11,5 @@ desktop.ini
 # Env
 .env
 .env.local
+
+.vercel
