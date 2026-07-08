@@ -1,8 +1,6 @@
 // ─── Proxy Vercel → API Inference Hugging Face ──────────────────────
-// Résout le problème CORS : le navigateur appelle le même domaine (Vercel),
-// et Vercel forwarde à api-inference.huggingface.co (serveur → serveur, pas de CORS)
-export default async function handler(req, res) {
-  // CORS (au cas où l'appel vient d'un autre domaine)
+// Résout CORS : navigateur → même domaine Vercel → api-inference.hf.co
+module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -10,140 +8,96 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { spaceId, prompt, image, token, mode } = req.body;
+  const { spaceId, prompt, image, token } = req.body;
   if (!spaceId || !prompt || !token) {
     return res.status(400).json({ error: 'Missing spaceId, prompt, or token' });
   }
 
-  // Essayer plusieurs formats
-  const formats = [];
+  // Helper fetch avec timeout
+  const fetchHF = async (body) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      return await fetch(`https://api-inference.huggingface.co/models/${spaceId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
-  // Format 1: img2img JSON (image + inputs)
+  // Construire les body à essayer
+  const bodies = [];
+
+  // img2img (JSON avec image en base64)
   if (image) {
-    formats.push({
-      name: 'img2img',
-      opts: () => ({
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ inputs: prompt, image }),
-      }),
-    });
-    formats.push({
-      name: 'img2img v2',
-      opts: () => ({
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: { image },
-        }),
-      }),
-    });
+    bodies.push({ name: 'img2img', body: JSON.stringify({ inputs: prompt, image }) });
+    bodies.push({ name: 'img2img v2', body: JSON.stringify({ inputs: prompt, parameters: { image } }) });
   }
 
-  // Format 2: text-to-image
-  formats.push({
-    name: 'txt2img',
-    opts: () => ({
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ inputs: prompt }),
-    }),
-  });
+  // text-to-image
+  bodies.push({ name: 'txt2img', body: JSON.stringify({ inputs: prompt }) });
 
-  for (const fmt of formats) {
+  for (const fmt of bodies) {
     try {
-      const hfResp = await fetch(
-        `https://api-inference.huggingface.co/models/${spaceId}`,
-        fmt.opts()
-      );
+      const hfResp = await fetchHF(fmt.body);
 
       // 503 = model loading → retry
       if (hfResp.status === 503) {
         for (let r = 0; r < 6; r++) {
           await new Promise(s => setTimeout(s, 10000));
-          const retryResp = await fetch(
-            `https://api-inference.huggingface.co/models/${spaceId}`,
-            fmt.opts()
-          );
+          const retryResp = await fetchHF(fmt.body);
           if (retryResp.status === 200) {
-            const buffer = await retryResp.arrayBuffer();
+            const buf = await retryResp.arrayBuffer();
             res.setHeader('Content-Type', retryResp.headers.get('content-type') || 'image/png');
-            return res.status(200).send(Buffer.from(buffer));
+            return res.status(200).send(Buffer.from(buf));
           }
           if (retryResp.status !== 503) {
-            const errText = await retryResp.text().catch(() => '');
-            return res.status(retryResp.status).json({
-              error: errText.substring(0, 500),
-              format: fmt.name,
-              model: spaceId,
-            });
+            const txt = await retryResp.text().catch(() => '');
+            return res.status(retryResp.status).json({ error: txt.substring(0, 500), format: fmt.name, model: spaceId });
           }
         }
-        // Après 6 retries, 503 toujours → passer au format suivant
-        continue;
+        continue; // 503 après 6 retries → essayer autre format
       }
 
       // 200 = succès
       if (hfResp.status === 200) {
-        const buffer = await hfResp.arrayBuffer();
-        if (buffer.byteLength < 500) {
-          // Image vide → essayer format suivant
-          continue;
-        }
+        const buf = await hfResp.arrayBuffer();
+        if (buf.byteLength < 500) continue; // image vide → essayer autre format
         res.setHeader('Content-Type', hfResp.headers.get('content-type') || 'image/png');
-        return res.status(200).send(Buffer.from(buffer));
+        return res.status(200).send(Buffer.from(buf));
       }
 
       // Erreur
-      const errText = await hfResp.text().catch(() => '');
-      const errData = (() => { try { return JSON.parse(errText); } catch { return null; } })();
-      const errMsg = errData?.error || errText.substring(0, 300) || `HTTP ${hfResp.status}`;
+      const txt = await hfResp.text().catch(() => '');
+      let errMsg;
+      try { const j = JSON.parse(txt); errMsg = j.error || txt; } catch { errMsg = txt; }
+      if (!errMsg) errMsg = `HTTP ${hfResp.status}`;
 
-      // 404 = format non supporté → essayer suivant
-      if (hfResp.status === 404) {
-        continue;
-      }
-
-      // 401/403 = token invalide ou gated → stop tout de suite
+      // 404 → essayer format suivant
+      if (hfResp.status === 404) continue;
+      // 400 → essayer format suivant
+      if (hfResp.status === 400) continue;
+      // 401/403 = token invalide ou gated → stop
       if (hfResp.status === 401 || hfResp.status === 403) {
-        return res.status(hfResp.status).json({
-          error: errMsg,
-          format: fmt.name,
-          model: spaceId,
-        });
+        return res.status(hfResp.status).json({ error: errMsg.substring(0, 300), format: fmt.name, model: spaceId });
       }
+      // Autre → stop
+      return res.status(hfResp.status).json({ error: errMsg.substring(0, 300), format: fmt.name, model: spaceId });
 
-      // 400 = bad request (mauvais format) → essayer suivant
-      if (hfResp.status === 400) {
-        continue;
-      }
-
-      // Autre erreur
-      return res.status(hfResp.status).json({
-        error: errMsg,
-        format: fmt.name,
-        model: spaceId,
-      });
-
-    } catch (fetchErr) {
-      // Erreur réseau → essayer format suivant
-      continue;
+    } catch (e) {
+      continue; // erreur réseau → essayer format suivant
     }
   }
 
-  // Tous les formats ont échoué
   return res.status(502).json({
     error: 'Tous les formats API HF ont échoué pour ce modèle',
     model: spaceId,
   });
-}
+};
