@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║              DzArchi AI — Architecture Studio               ║
+║                                                              ║
+║   Transformez vos plans 2D en perspectives 3D                ║
+║   photoréalistes via l'IA générative                         ║
+║                                                              ║
+║   Stack : HTML5 · Tailwind CSS · Lucide Icons                ║
+║          @gradio/client · Hugging Face Spaces                ║
+║                                                              ║
+║   Construit par JARVIS pour Ilyes — juillet 2026             ║
+╚══════════════════════════════════════════════════════════════╝
+-->
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DzArchi AI — Architecture Intelligence</title>
+  <meta name="description" content="Transformez vos plans 2D en rendus 3D photoréalistes avec l'IA générative" />
+
+  <!-- ===== FONTS ===== -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- ===== TAILWIND CSS v3 CDN ===== -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'sans-serif'],
+            arabic: ['Tajawal', 'sans-serif'],
+          },
+          colors: {
+            premium: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+              950: '#1e1b4b',
+            },
+            surface: {
+              DEFAULT: '#0f1119',
+              50: '#13151f',
+              100: '#181b28',
+              200: '#1e2233',
+              300: '#262b3f',
+              400: '#2e3450',
+            }
+          },
+          animation: {
+            'gradient': 'gradient 8s ease infinite',
+            'float': 'float 6s ease-in-out infinite',
+            'pulse-soft': 'pulseSoft 3s ease-in-out infinite',
+            'shimmer': 'shimmer 2s linear infinite',
+            'aurora': 'aurora 15s ease infinite',
+            'glow': 'glow 2s ease-in-out infinite alternate',
+            'slide-up': 'slideUp 0.5s ease-out',
+            'slide-down': 'slideDown 0.3s ease-out',
+            'fade-in': 'fadeIn 0.5s ease-out',
+            'scale-in': 'scaleIn 0.4s ease-out',
+            'border-flow': 'borderFlow 3s linear infinite',
+            'spin-slow': 'spin 3s linear infinite',
+            'breathe': 'breathe 4s ease-in-out infinite',
+          },
+          keyframes: {
+            gradient: {
+              '0%, 100%': { backgroundPosition: '0% 50%' },
+              '50%': { backgroundPosition: '100% 50%' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-10px)' },
+            },
+            pulseSoft: {
+              '0%, 100%': { opacity: '0.4' },
+              '50%': { opacity: '0.8' },
+            },
+            shimmer: {
+              '0%': { transform: 'translateX(-100%)' },
+              '100%': { transform: 'translateX(100%)' },
+            },
+            aurora: {
+              '0%, 100%': { transform: 'translate(0%, 0%) scale(1)', opacity: '0.3' },
+              '25%': { transform: 'translate(10%, -15%) scale(1.1)', opacity: '0.4' },
+              '50%': { transform: 'translate(-5%, 10%) scale(0.9)', opacity: '0.25' },
+              '75%': { transform: 'translate(15%, 5%) scale(1.05)', opacity: '0.35' },
+            },
+            glow: {
+              '0%': { boxShadow: '0 0 20px rgba(99,102,241,0.2), 0 0 40px rgba(99,102,241,0.1)' },
+              '100%': { boxShadow: '0 0 30px rgba(99,102,241,0.4), 0 0 60px rgba(99,102,241,0.2), 0 0 80px rgba(99,102,241,0.1)' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(20px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            slideDown: {
+              '0%': { transform: 'translateY(-10px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            scaleIn: {
+              '0%': { transform: 'scale(0.95)', opacity: '0' },
+              '100%': { transform: 'scale(1)', opacity: '1' },
+            },
+            borderFlow: {
+              '0%': { backgroundPosition: '0% 50%' },
+              '100%': { backgroundPosition: '200% 50%' },
+            },
+            breathe: {
+              '0%, 100%': { transform: 'scale(1)', opacity: '0.6' },
+              '50%': { transform: 'scale(1.05)', opacity: '0.8' },
+            },
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- ===== LUCIDE ICONS ===== -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* ================================================================
+       STYLES CUSTOM PREMIUM — Par-dessus Tailwind
+       ================================================================ */
+
+    /* --- Reset & Base --- */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0a0c12;
+      color: #e2e8f0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* --- Background Aurora / Gradient Mesh --- */
+    .bg-mesh {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .bg-mesh .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      will-change: transform, opacity;
+    }
+    .bg-mesh .orb:nth-child(1) {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(99,102,241,0.15), transparent 70%);
+      top: -15%; left: -10%;
+      animation: aurora 12s ease-in-out infinite;
+    }
+    .bg-mesh .orb:nth-child(2) {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(139,92,246,0.12), transparent 70%);
+      bottom: -10%; right: -5%;
+      animation: aurora 15s ease-in-out infinite 3s;
+    }
+    .bg-mesh .orb:nth-child(3) {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(59,130,246,0.08), transparent 70%);
+      top: 40%; left: 50%;
+      animation: aurora 18s ease-in-out infinite 6s;
+    }
+    /* Grille subtile en arrière-plan */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-image:
+        linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* --- Glassmorphism Cards --- */
+    .glass {
+      background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .glass:hover {
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+    }
+    .glass-strong {
+      background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      backdrop-filter: blur(32px);
+      -webkit-backdrop-filter: blur(32px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    /* --- Upload Zone --- */
+    .drop-zone {
+      position: relative;
+      border: 2px dashed rgba(99,102,241,0.3);
+      border-radius: 1.25rem;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      background: linear-gradient(135deg, rgba(99,102,241,0.03), rgba(139,92,246,0.03));
+    }
+    .drop-zone:hover {
+      border-color: rgba(99,102,241,0.6);
+      background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.06));
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(99,102,241,0.1);
+    }
+    .drop-zone.dragover {
+      border-color: #6366f1;
+      border-style: solid;
+      background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.08));
+      transform: translateY(-2px) scale(1.01);
+      box-shadow: 0 0 40px rgba(99,102,241,0.2), 0 8px 30px rgba(99,102,241,0.15);
+    }
+    .drop-zone.dragover .drop-icon {
+      transform: scale(1.15);
+    }
+    .drop-zone.has-image {
+      border-color: rgba(16,185,129,0.4);
+      border-style: solid;
+      background: linear-gradient(135deg, rgba(16,185,129,0.03), rgba(99,102,241,0.03));
+      padding: 0.75rem;
+    }
+    .drop-zone .drop-icon {
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* --- Gradient Button --- */
+    .btn-premium {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 1rem 2rem;
+      border: none;
+      border-radius: 1rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      background: linear-gradient(135deg, #4f46e5, #7c3aed, #6366f1);
+      background-size: 200% 200%;
+      animation: gradient 4s ease infinite;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.3), 0 0 0 0 rgba(99,102,241,0);
+    }
+    .btn-premium::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6, #4f46e5);
+      background-size: 200% 200%;
+      opacity: 0;
+      transition: opacity 0.3s;
+      animation: gradient 3s ease infinite;
+    }
+    .btn-premium:hover:not(:disabled) {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(99,102,241,0.4), 0 0 60px rgba(99,102,241,0.1);
+    }
+    .btn-premium:hover:not(:disabled)::before {
+      opacity: 1;
+    }
+    .btn-premium:active:not(:disabled) {
+      transform: translateY(-1px) scale(0.98);
+    }
+    .btn-premium:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-premium span, .btn-premium i {
+      position: relative;
+      z-index: 1;
+    }
+    /* Ripple effect */
+    .btn-premium .ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+      transform: scale(0);
+      animation: ripple 0.6s ease-out;
+      pointer-events: none;
+    }
+    @keyframes ripple {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* --- Custom Select / Input --- */
+    .input-premium {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.875rem;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+      transition: all 0.25s ease;
+      outline: none;
+      font-family: inherit;
+    }
+    .input-premium:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 20px rgba(99,102,241,0.08);
+    }
+    .input-premium::placeholder {
+      color: rgba(148,163,184,0.5);
+    }
+    .input-premium option {
+      background: #1a1d2e;
+      color: #e2e8f0;
+    }
+    textarea.input-premium {
+      resize: vertical;
+      min-height: 80px;
+      line-height: 1.5;
+    }
+
+    /* --- Labels --- */
+    .label-premium {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    /* --- Loading Spinner Premium --- */
+    .loader-ring {
+      position: relative;
+      width: 64px;
+      height: 64px;
+    }
+    .loader-ring div {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      border-top-color: #6366f1;
+      animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+    .loader-ring div:nth-child(2) {
+      width: 80%;
+      height: 80%;
+      top: 10%;
+      left: 10%;
+      border-top-color: #8b5cf6;
+      animation-delay: -0.15s;
+      animation-duration: 1.5s;
+    }
+    .loader-ring div:nth-child(3) {
+      width: 60%;
+      height: 60%;
+      top: 20%;
+      left: 20%;
+      border-top-color: #a78bfa;
+      animation-delay: -0.3s;
+      animation-duration: 1.8s;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* --- Status Message Cycling --- */
+    .message-cycle {
+      animation: fadeIn 0.4s ease-out;
+    }
+    .message-cycle.exit {
+      animation: slideDown 0.3s ease-in reverse;
+    }
+
+    /* --- Image Reveal --- */
+    .reveal-image {
+      animation: imageReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      filter: blur(20px);
+      transform: scale(0.95);
+    }
+    @keyframes imageReveal {
+      to {
+        filter: blur(0);
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    /* --- Toast Container --- */
+    .toast-container {
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      padding: 1rem 1.25rem;
+      border-radius: 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      max-width: 400px;
+    }
+    .toast.removing {
+      animation: slideOut 0.3s ease-in forwards;
+    }
+    .toast-success {
+      background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.1));
+      border: 1px solid rgba(16,185,129,0.3);
+      color: #6ee7b7;
+    }
+    .toast-error {
+      background: linear-gradient(135deg, rgba(239,68,68,0.2), rgba(239,68,68,0.1));
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #fca5a5;
+    }
+    .toast-info {
+      background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(99,102,241,0.1));
+      border: 1px solid rgba(99,102,241,0.3);
+      color: #a5b4fc;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* --- Scrollbar --- */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
+
+    /* --- Responsive helpers --- */
+    @media (max-width: 768px) {
+      .drop-zone { padding: 1.5rem 1rem; }
+      .btn-premium { padding: 0.875rem 1.5rem; }
+    }
+
+    /* --- Selection --- */
+    ::selection {
+      background: rgba(99,102,241,0.3);
+      color: white;
+    }
+
+    /* --- Focus visible --- */
+    :focus-visible {
+      outline: 2px solid #6366f1;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* --- Skeleton shimmer placeholder --- */
+    .skeleton {
+      background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 2s linear infinite;
+      border-radius: 1rem;
+    }
+
+    /* --- Glow border card variant --- */
+    .card-glow-border {
+      position: relative;
+    }
+    .card-glow-border::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      background: linear-gradient(135deg, transparent 40%, rgba(99,102,241,0.2), transparent 60%);
+      z-index: -1;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    .card-glow-border:hover::after {
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body class="antialiased">
+  <!-- ===== ARRIÈRE-PLAN ANIMÉ ===== -->
+  <div class="bg-mesh" aria-hidden="true">
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+  </div>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <!-- ===== TOASTS ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ===== APPLICATION ===== -->
+  <div id="app" class="relative z-10 min-h-screen">
+
+    <!-- ===== HEADER ===== -->
+    <header class="sticky top-0 z-50 glass-strong border-b border-white/5">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16 md:h-20">
+          <!-- Logo -->
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div>
+              <h1 class="text-lg font-bold text-white font-display tracking-tight">
+                DzArchi<span class="text-indigo-400"> AI</span>
+              </h1>
+              <p class="text-[10px] text-slate-500 font-medium tracking-wider uppercase -mt-0.5">
+                Architecture Studio
+              </p>
+            </div>
+          </div>
+
+          <!-- Right: Langue + GitHub -->
+          <div class="flex items-center gap-3">
+            <button id="langToggle" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200" title="Changer de langue">
+              <span id="langLabel">FR</span>
+            </button>
+            <a href="https://huggingface.co/spaces" target="_blank" rel="noopener" class="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200 hidden sm:flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              Spaces
+            </a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+
+      <!-- Hero Tagline -->
+      <div class="text-center mb-8 md:mb-10 animate-fade-in">
+        <h2 class="text-2xl md:text-4xl font-display font-extrabold text-white tracking-tight">
+          Plan <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400">→</span> 3D
+        </h2>
+        <p class="text-slate-500 text-sm md:text-base mt-2 max-w-xl mx-auto" id="tagline">
+          Téléversez votre plan 2D, choisissez un style, laissez l'IA générer une perspective 3D photoréaliste
+        </p>
+      </div>
+
+      <!-- Grid principale -->
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 md:gap-6">
+
+        <!-- ===== PANEL GAUCHE : Upload + Contrôles (3/5) ===== -->
+        <div class="lg:col-span-3 space-y-5 md:space-y-6">
+
+          <!-- Upload Zone -->
+          <div class="glass rounded-2xl p-5 md:p-6 card-glow-border">
+            <label class="label-premium flex items-center gap-2">
+              <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span id="uploadLabel">Plan 2D</span>
+            </label>
+
+            <!-- Drop zone -->
+            <div id="dropZone" class="drop-zone mt-2">
+              <input type="file" id="fileInput" accept="image/png,image/jpeg" class="hidden" />
+
+              <!-- État vide -->
+              <div id="emptyState" class="space-y-3">
+                <div class="drop-icon w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <svg class="w-7 h-7 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-slate-300">
+                    <span class="text-indigo-400 hover:text-indigo-300 cursor-pointer" id="browseText">Cliquez pour parcourir</span>
+                    <span class="text-slate-500"> ou glissez-déposez</span>
+                  </p>
+                  <p class="text-xs text-slate-600 mt-1">PNG ou JPG — max 10 Mo</p>
+                </div>
+              </div>
+
+              <!-- Aperçu image -->
+              <div id="previewState" class="hidden relative">
+                <div class="relative rounded-xl overflow-hidden bg-surface-300/50">
+                  <img id="imagePreview" class="w-full h-48 md:h-56 object-contain" alt="Aperçu du plan" />
+                  <button id="deleteImage" class="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-black/80 transition-all duration-200" title="Supprimer">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+                <div class="flex items-center gap-2 mt-2 text-xs text-emerald-400/80">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span id="fileInfo">Fichier chargé</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contrôles -->
+          <div class="glass rounded-2xl p-5 md:p-6 card-glow-border">
+            <label class="label-premium flex items-center gap-2 mb-4">
+              <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+              <span id="configLabel">Configuration</span>
+            </label>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Type de projet -->
+              <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block" id="typeLabel">Type de projet</label>
+                <select id="projectType" class="input-premium">
+                  <option value="exterieure">🏗️ Extérieure</option>
+                  <option value="interieure">🪟 Intérieure</option>
+                </select>
+              </div>
+              <!-- Style -->
+              <div>
+                <label class="text-xs font-medium text-slate-500 mb-1.5 block" id="styleLabel">Style architectural</label>
+                <select id="styleSelect" class="input-premium">
+                  <option value="moderne">✨ Moderne Contemporain</option>
+                  <option value="scandinave">🌿 Scandinave Épuré</option>
+                  <option value="mediterraneen">☀️ Méditerranéen</option>
+                  <option value="industriel">🏭 Industriel Loft</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Prompt -->
+            <div class="mt-4">
+              <label class="text-xs font-medium text-slate-500 mb-1.5 block" id="promptLabel">Description créative</label>
+              <textarea id="promptInput" class="input-premium" placeholder="Décrivez l'ambiance souhaitée...">Architecture moderne avec lumière naturelle, matériaux nobles, ambiance chaleureuse et professionnelle</textarea>
+            </div>
+
+            <!-- Space ID Hugging Face -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="text-xs font-medium text-slate-500" id="spaceLabel">Hugging Face Space ID</label>
+                <button id="spaceHelpBtn" class="text-[10px] text-indigo-400/70 hover:text-indigo-300 transition-colors flex items-center gap-1" title="Aide">
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span id="spaceHelpText">Qu'est-ce que c'est ?</span>
+                </button>
+              </div>
+              <input type="text" id="spaceInput" class="input-premium font-mono text-xs"
+                placeholder="utilisateur/espace-gradio" />
+              <p class="text-[10px] text-slate-600 mt-1.5 leading-relaxed" id="spaceHint">
+                Laissez vide pour utiliser le Space par défaut. Vous pouvez utiliser n'importe quel Space Gradio public compatible avec la génération d'images.
+              </p>
+            </div>
+
+            <!-- Fallback info -->
+            <div class="mt-3 flex items-center gap-2 text-[10px] text-slate-600 bg-white/[0.02] rounded-lg px-3 py-2 border border-white/5">
+              <svg class="w-3 h-3 text-amber-400/60 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span id="fallbackInfo">2 Spaces de secours configurés automatiquement en cas d'indisponibilité</span>
+            </div>
+          </div>
+
+          <!-- Generate Button -->
+          <button id="generateBtn" class="btn-premium w-full text-base md:text-lg py-4 md:py-5" disabled>
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span id="generateText">✨ Générer le rendu 3D</span>
+          </button>
+        </div>
+
+        <!-- ===== PANEL DROIT : Résultat (2/5) ===== -->
+        <div class="lg:col-span-2">
+          <div class="glass rounded-2xl p-5 md:p-6 h-full flex flex-col card-glow-border">
+            <label class="label-premium flex items-center gap-2 mb-3">
+              <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <span id="resultLabel">Rendu 3D</span>
+            </label>
+
+            <!-- Conteneur résultat -->
+            <div id="resultContainer" class="flex-1 flex flex-col">
+
+              <!-- État vide (défaut) -->
+              <div id="resultEmpty" class="flex-1 flex flex-col items-center justify-center text-center py-12">
+                <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500/5 to-violet-500/5 border border-indigo-500/10 flex items-center justify-center mb-4">
+                  <svg class="w-9 h-9 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                </div>
+                <p class="text-sm text-slate-600 font-medium" id="resultEmptyText">En attente d'une génération</p>
+                <p class="text-xs text-slate-700 mt-1 max-w-[200px]" id="resultEmptyHint">Téléversez un plan et cliquez sur Générer</p>
+              </div>
+
+              <!-- État chargement -->
+              <div id="resultLoading" class="hidden flex-1 flex flex-col items-center justify-center text-center py-8">
+                <div class="loader-ring mb-5">
+                  <div></div><div></div><div></div>
+                </div>
+                <p id="loadingMessage" class="text-sm font-semibold text-slate-300 message-cycle">
+                  Connexion sécurisée établie
+                </p>
+                <p id="loadingSub" class="text-xs text-slate-600 mt-1.5 message-cycle">
+                  Chiffrement TLS • 256-bit
+                </p>
+                <!-- Barre de progression subtile -->
+                <div class="w-48 h-1 rounded-full bg-white/5 mt-4 overflow-hidden">
+                  <div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" id="loadingProgress" style="width: 15%;"></div>
+                </div>
+                <p class="text-[10px] text-slate-700 mt-2" id="loadingTimer">0s</p>
+              </div>
+
+              <!-- État résultat -->
+              <div id="resultSuccess" class="hidden flex-1 flex flex-col">
+                <div class="relative flex-1 rounded-xl overflow-hidden bg-surface-300/30 border border-white/5 min-h-[250px] flex items-center justify-center">
+                  <img id="resultImage" class="w-full h-auto max-h-[400px] object-contain reveal-image opacity-0" alt="Rendu 3D généré" />
+                  <div id="imagePlaceholder" class="absolute inset-0 skeleton m-0 rounded-none hidden"></div>
+                </div>
+                <div class="flex gap-2 mt-4">
+                  <button id="downloadBtn" class="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:from-emerald-500/30 hover:to-emerald-600/20 transition-all duration-200">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span id="downloadText">Télécharger HD</span>
+                  </button>
+                  <button id="retryBtn" class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/10 transition-all duration-200">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    <span id="retryText">Re-générer</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- État erreur -->
+              <div id="resultError" class="hidden flex-1 flex flex-col items-center justify-center text-center py-10">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500/10 to-orange-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+                  <svg class="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                </div>
+                <p id="errorTitle" class="text-sm font-semibold text-red-400">Erreur de génération</p>
+                <p id="errorMessage" class="text-xs text-slate-500 mt-2 max-w-[250px] leading-relaxed">Une erreur est survenue. Veuillez réessayer.</p>
+                <button id="errorRetryBtn" class="mt-4 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center gap-2">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                  <span id="errorRetryText">Réessayer</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== FOOTER ===== -->
+      <footer class="mt-10 pb-6 text-center">
+        <p class="text-xs text-slate-700">
+          Propulsé par <span class="text-slate-600">Hugging Face</span> ·
+          <span class="text-slate-700/80">DzArchi AI</span> ·
+          Construit avec <span class="text-indigo-400/60">❤</span> pour les architectes
+        </p>
+        <p class="text-[10px] text-slate-800 mt-1">
+          Les temps de génération dépendent de la disponibilité des Spaces gratuits Hugging Face
+        </p>
+      </footer>
+    </main>
+  </div>
+
+  <!-- ================================================================
+       JAVASCRIPT — Logique complète de l'application
+       ================================================================ -->
+  <script type="module">
+    // ─── Imports ─────────────────────────────────────────────────────────
+    import { Client } from 'https://cdn.jsdelivr.net/npm/@gradio/client/+esm';
+
+    // ─── Configuration ───────────────────────────────────────────────────
+    const CONFIG = {
+      // Liste des Spaces par défaut (testés et fiables pour la génération d'images)
+      DEFAULT_SPACES: [
+        'stabilityai/stable-diffusion-3.5-large',
+        'black-forest-labs/FLUX.1-schnell',
+        'stabilityai/stable-diffusion-xl-base-1.0',
+      ],
+      // Messages de chargement qui tournent en boucle
+      LOADING_MESSAGES: [
+        { msg: 'Connexion sécurisée', sub: 'Chiffrement TLS établi' },
+        { msg: 'Analyse du plan 2D', sub: 'Détection des contours et structures' },
+        { msg: 'Application des matériaux', sub: 'Textures et rendu des surfaces' },
+        { msg: 'Calcul des ombres', sub: 'Éclairage global et ray tracing' },
+        { msg: 'Génération des détails', sub: 'Affinage des textures hautes résolutions' },
+        { msg: 'Finalisation HD', sub: 'Post-processing et optimisation' },
+        { msg: 'Toujours en cours…', sub: "Les serveurs gratuits peuvent être lents" },
+        { msg: 'Toujours pas de réponse ?', sub: 'Les Spaces gratuits mettent parfois 2-3 min' },
+      ],
+      // Timeout maximum (90s comme recommandé par la spec)
+      TIMEOUT_MS: 90000,
+      // Taille max du fichier (10 Mo)
+      MAX_FILE_SIZE: 10 * 1024 * 1024,
+      // Formats acceptés
+      ACCEPTED_TYPES: ['image/png', 'image/jpeg'],
+    };
+
+    // ─── État de l'application ──────────────────────────────────────────
+    const state = {
+      currentFile: null,       // File object uploadé
+      isGenerating: false,
+      currentResultUrl: null,
+      abortController: null,
+      currentSpaceIndex: 0,    // Pour le fallback entre Spaces
+      lang: 'fr',              // 'fr' | 'ar'
+    };
+
+    // ─── DOM refs ────────────────────────────────────────────────────────
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const dropZone = $('#dropZone');
+    const fileInput = $('#fileInput');
+    const emptyState = $('#emptyState');
+    const previewState = $('#previewState');
+    const imagePreview = $('#imagePreview');
+    const deleteImage = $('#deleteImage');
+    const browseText = $('#browseText');
+    const fileInfo = $('#fileInfo');
+    const generateBtn = $('#generateBtn');
+    const generateText = $('#generateText');
+    const spaceInput = $('#spaceInput');
+    const projectType = $('#projectType');
+    const styleSelect = $('#styleSelect');
+    const promptInput = $('#promptInput');
+    const resultEmpty = $('#resultEmpty');
+    const resultLoading = $('#resultLoading');
+    const resultSuccess = $('#resultSuccess');
+    const resultError = $('#resultError');
+    const resultImage = $('#resultImage');
+    const loadingMessage = $('#loadingMessage');
+    const loadingSub = $('#loadingSub');
+    const loadingProgress = $('#loadingProgress');
+    const loadingTimer = $('#loadingTimer');
+    const downloadBtn = $('#downloadBtn');
+    const retryBtn = $('#retryBtn');
+    const errorTitle = $('#errorTitle');
+    const errorMessage = $('#errorMessage');
+    const errorRetryBtn = $('#errorRetryBtn');
+    const langToggle = $('#langToggle');
+    const langLabel = $('#langLabel');
+    const toastContainer = $('#toastContainer');
+
+    // ─── Utilitaires ────────────────────────────────────────────────────
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' o';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
+    }
+
+    function getFileExtension(filename) {
+      return filename?.split('.').pop()?.toLowerCase() || '';
+    }
+
+    // ─── Toast System ────────────────────────────────────────────────────
+    function showToast(message, type = 'info', duration = 4000) {
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+
+      const icons = {
+        success: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+        error: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        info: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+      };
+
+      toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
+      toastContainer.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    // ─── Gestion du fichier / Upload ────────────────────────────────────
+    function handleFile(file) {
+      // Validation stricte
+      if (!file) return;
+
+      if (!CONFIG.ACCEPTED_TYPES.includes(file.type)) {
+        showToast('Format non supporté. Utilisez PNG ou JPG.', 'error', 5000);
+        return;
+      }
+
+      if (file.size > CONFIG.MAX_FILE_SIZE) {
+        showToast(`Fichier trop volumineux (${formatFileSize(file.size)}). Maximum 10 Mo.`, 'error', 5000);
+        return;
+      }
+
+      state.currentFile = file;
+
+      // Afficher l'aperçu
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        imagePreview.src = e.target.result;
+        emptyState.classList.add('hidden');
+        previewState.classList.remove('hidden');
+        dropZone.classList.add('has-image');
+        fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+        updateGenerateButton();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearFile() {
+      state.currentFile = null;
+      imagePreview.src = '';
+      emptyState.classList.remove('hidden');
+      previewState.classList.add('hidden');
+      dropZone.classList.remove('has-image');
+      fileInput.value = '';
+      updateGenerateButton();
+    }
+
+    // ─── Drag & Drop ─────────────────────────────────────────────────────
+    dropZone.addEventListener('click', (e) => {
+      if (e.target.closest('#deleteImage')) return;
+      fileInput.click();
+    });
+
+    // Séparation du bouton "supprimer" pour éviter le conflit de clic
+    deleteImage.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearFile();
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files?.length) handleFile(fileInput.files[0]);
+    });
+
+    // Drag events
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        if (!state.currentFile) dropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      });
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const files = e.dataTransfer?.files;
+      if (files?.length) handleFile(files[0]);
+    });
+
+    // Browse text click
+    browseText.addEventListener('click', () => fileInput.click());
+
+    // ─── Génération ──────────────────────────────────────────────────────
+    function updateGenerateButton() {
+      const hasFile = !!state.currentFile;
+      const isGenerating = state.isGenerating;
+      generateBtn.disabled = !hasFile || isGenerating;
+    }
+
+    // Mapping des styles → prompts pour enrichir la requête
+    function buildEnhancedPrompt() {
+      const type = projectType.value;
+      const style = styleSelect.value;
+      const userPrompt = promptInput.value.trim() || 'Architecture moderne, lumière naturelle';
+
+      const styleMap = {
+        'moderne': 'Modern contemporary architecture, clean lines, large windows, minimalist design, natural lighting',
+        'scandinave': 'Scandinavian design, clean minimalism, light wood, white walls, cozy atmosphere, Nordic style',
+        'mediterraneen': 'Mediterranean architecture, warm tones, terracotta, arched windows, Mediterranean vegetation, sunny',
+        'industriel': 'Industrial loft style, exposed brick, steel beams, concrete, large windows, urban chic',
+      };
+
+      const typeMap = {
+        'exterieure': 'exterior view, building facade, outdoor architecture, landscape',
+        'interieure': 'interior view, indoor space, room perspective, interior design',
+      };
+
+      return `${styleMap[style] || 'modern architecture'}, ${typeMap[type] || 'architectural'}, ${userPrompt}, architectural photography, photorealistic, 4K, highly detailed, professional rendering`;
+    }
+
+    // Messages de chargement rotatifs
+    let loadingInterval = null;
+    function startLoadingMessages() {
+      let index = 0;
+      let timer = 0;
+
+      const updateMessage = () => {
+        const m = CONFIG.LOADING_MESSAGES[index % CONFIG.LOADING_MESSAGES.length];
+        loadingMessage.textContent = m.msg;
+        loadingSub.textContent = m.sub;
+
+        // Barre de progression oscillante (pas une vraie progression, juste visuel)
+        const progress = 15 + (index * 10) % 70;
+        loadingProgress.style.width = `${progress}%`;
+
+        index++;
+      };
+
+      updateMessage();
+
+      // Timer en secondes
+      const timerInterval = setInterval(() => {
+        timer++;
+        loadingTimer.textContent = `${timer}s`;
+      }, 1000);
+
+      loadingInterval = setInterval(updateMessage, 5000);
+
+      return () => {
+        clearInterval(loadingInterval);
+        clearInterval(timerInterval);
+        loadingInterval = null;
+      };
+    }
+
+    function showLoadingState() {
+      resultEmpty.classList.add('hidden');
+      resultSuccess.classList.add('hidden');
+      resultError.classList.add('hidden');
+      resultLoading.classList.remove('hidden');
+      generateBtn.disabled = true;
+      generateText.textContent = '⏳ Génération en cours...';
+    }
+
+    function showSuccessState(imageUrl) {
+      resultLoading.classList.add('hidden');
+      resultEmpty.classList.add('hidden');
+      resultError.classList.add('hidden');
+      resultSuccess.classList.remove('hidden');
+
+      // Réinitialiser l'animation en clonant l'élément
+      const newImg = resultImage.cloneNode(true);
+      resultImage.parentNode.replaceChild(newImg, resultImage);
+      // Mettre à jour la ref
+      // (On récupère la nouvelle ref)
+      const updatedImg = document.querySelector('#resultImage');
+      updatedImg.src = imageUrl;
+      updatedImg.alt = 'Rendu 3D généré';
+      // Forcer la réanimation
+      updatedImg.classList.remove('reveal-image');
+      void updatedImg.offsetWidth; // reflow
+      updatedImg.classList.add('reveal-image');
+      updatedImg.style.opacity = '1';
+
+      state.currentResultUrl = imageUrl;
+
+      generateBtn.disabled = false;
+      generateText.textContent = '✨ Générer le rendu 3D';
+    }
+
+    function showErrorState(title, message) {
+      resultLoading.classList.add('hidden');
+      resultEmpty.classList.add('hidden');
+      resultSuccess.classList.add('hidden');
+      resultError.classList.remove('hidden');
+      errorTitle.textContent = title;
+      errorMessage.textContent = message;
+
+      generateBtn.disabled = false;
+      generateText.textContent = '✨ Générer le rendu 3D';
+    }
+
+    function resetToEmpty() {
+      resultLoading.classList.add('hidden');
+      resultSuccess.classList.add('hidden');
+      resultError.classList.add('hidden');
+      resultEmpty.classList.remove('hidden');
+      generateBtn.disabled = false;
+      generateText.textContent = '✨ Générer le rendu 3D';
+    }
+
+    // ─── Appel API Gradio ────────────────────────────────────────────────
+    async function tryGenerate(spaceId, imageFile, prompt, attempt = 0) {
+      const MAX_RETRIES = 2;
+      let timeoutId = null;
+
+      try {
+        // Timeout controller
+        state.abortController = new AbortController();
+        timeoutId = setTimeout(() => {
+          state.abortController?.abort();
+        }, CONFIG.TIMEOUT_MS);
+
+        // Connexion au Space Gradio
+        const client = await Client.connect(spaceId, {
+          signal: state.abortController.signal,
+        });
+
+        // Découverte dynamique de l'API du Space
+        // On inspecte /?view=api pour connaître les endpoints réels
+        let endpoints = [];
+        try {
+          const apiInfo = await client.view_api();
+          // Extraire tous les endpoints disponibles
+          if (apiInfo?.named_endpoints) {
+            endpoints = Object.keys(apiInfo.named_endpoints).map(fn => ({
+              fn: '/' + fn.replace(/^\//, ''),
+              discovered: true
+            }));
+          }
+        } catch {
+          // fallback: endpoints communs
+          endpoints = [
+            { fn: '/predict' },
+            { fn: '/run' },
+            { fn: '/generate_image' },
+            { fn: '/generate' },
+            { fn: '/api/predict' },
+            { fn: '/submit' },
+          ];
+        }
+
+        // Préparer le fichier image
+        const imageBlob = imageFile;
+
+        let result = null;
+        let lastError = null;
+
+        for (const ep of endpoints) {
+          try {
+            // Adapter les paramètres selon ce qu'on a découvert
+            const params = buildGradioParams(ep, prompt, imageBlob);
+            result = await client.predict(ep.fn, params, {
+              signal: state.abortController.signal,
+            });
+            if (result?.data) break;
+          } catch (e) {
+            lastError = e;
+            continue;
+          }
+        }
+
+        clearTimeout(timeoutId);
+
+        if (!result?.data) {
+          throw new Error(lastError?.message || 'Aucune réponse du modèle');
+        }
+
+        // Extraire l'image du résultat (varie selon le Space)
+        let imageUrl = null;
+        const data = result.data;
+
+        if (typeof data === 'string' && (data.startsWith('http') || data.startsWith('data:'))) {
+          imageUrl = data;
+        } else if (Array.isArray(data)) {
+          for (const item of data) {
+            if (typeof item === 'string' && (item.startsWith('http') || item.startsWith('data:'))) {
+              imageUrl = item; break;
+            }
+            if (item?.url) { imageUrl = item.url; break; }
+            if (item?.image?.url) { imageUrl = item.image.url; break; }
+          }
+        } else if (data?.url) {
+          imageUrl = data.url;
+        } else if (data?.image) {
+          imageUrl = typeof data.image === 'string' ? data.image : data.image.url;
+        }
+
+        if (!imageUrl) {
+          if (data instanceof Blob) {
+            imageUrl = URL.createObjectURL(data);
+          } else {
+            throw new Error("Format de réponse non reconnu. L'image n'a pas pu être extraite.");
+          }
+        }
+
+        return imageUrl;
+
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+          throw new Error('timeout');
+        }
+
+        if (attempt < MAX_RETRIES) {
+          const delay = (attempt + 1) * 3000;
+          await new Promise(r => setTimeout(r, delay));
+          return tryGenerate(spaceId, imageFile, prompt, attempt + 1);
+        }
+
+        throw error;
+      }
+    }
+
+    /** Construit les paramètres adaptés à l'endpoint Gradio découvert */
+    function buildGradioParams(endpoint, prompt, imageBlob) {
+      // Si l'endpoint a été découvert via view_api(), on connaît ses paramètres
+      if (endpoint.discovered && endpoint.parameters) {
+        const params = {};
+        endpoint.parameters.forEach((p, i) => {
+          const name = p.label || p.parameter_name || `param_${i}`;
+          // Deviner le type de paramètre par son nom
+          const lower = name.toLowerCase();
+          if (lower.includes('prompt') || lower.includes('text')) {
+            params[name] = prompt;
+          } else if (lower.includes('image') || lower.includes('img')) {
+            params[name] = imageBlob;
+          } else if (i === 0) {
+            // Premier paramètre inconnu → prompt
+            params[name] = prompt;
+          } else if (i === 1) {
+            // Second → image
+            params[name] = imageBlob;
+          } else {
+            params[name] = '';
+          }
+        });
+        return params;
+      }
+
+      // Fallback: ordre positionnel classique SD
+      return { prompt, image: imageBlob };
+    }
+
+    // ─── Point d'entrée de la génération ────────────────────────────────
+    async function handleGenerate() {
+      if (!state.currentFile || state.isGenerating) return;
+
+      state.isGenerating = true;
+      const cleanLoading = startLoadingMessages();
+
+      showLoadingState();
+
+      // Récupérer les paramètres
+      const userSpace = spaceInput.value.trim();
+      const basePrompt = buildEnhancedPrompt();
+      const spacesToTry = userSpace
+        ? [userSpace, ...CONFIG.DEFAULT_SPACES.filter(s => s !== userSpace)]
+        : CONFIG.DEFAULT_SPACES;
+
+      let lastError = null;
+
+      for (let i = 0; i < spacesToTry.length; i++) {
+        const spaceId = spacesToTry[i];
+
+        if (i > 0) {
+          // Message de fallback
+          const fallbackMsg = document.createElement('div');
+          loadingMessage.textContent = `🔄 Fallback vers ${spaceId.split('/')[1]}...`;
+          loadingSub.textContent = 'Le serveur précédent était indisponible';
+          await new Promise(r => setTimeout(r, 1500));
+        }
+
+        try {
+          showToast(`Connexion à ${spaceId}...`, 'info', 3000);
+
+          const imageUrl = await tryGenerate(spaceId, state.currentFile, basePrompt, 0);
+
+          // Succès !
+          cleanLoading();
+          state.isGenerating = false;
+
+          // S'assurer que l'URL est absolue
+          let finalUrl = imageUrl;
+          if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+            // URL relative → compléter
+            finalUrl = `https://${spaceId.split('/')[0]}.hf.space/${imageUrl.replace(/^\//, '')}`;
+          }
+
+          showSuccessState(finalUrl);
+          showToast('🎉 Rendu 3D généré avec succès !', 'success', 5000);
+          return;
+
+        } catch (error) {
+          lastError = error;
+          console.warn(`Space ${spaceId} failed:`, error.message);
+
+          // Déterminer le type d'erreur pour le message
+          let errorType = 'generic';
+          const msg = error.message?.toLowerCase() || '';
+
+          if (msg.includes('timeout') || msg.includes('abort')) {
+            errorType = 'timeout';
+          } else if (msg.includes('sleep') || msg.includes('pause') || msg.includes('loading') || msg.includes('space is')) {
+            errorType = 'sleeping';
+          } else if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('too many')) {
+            errorType = 'quota';
+          } else if (msg.includes('404') || msg.includes('not found') || msg.includes('endpoint')) {
+            errorType = 'endpoint';
+          }
+
+          // Si c'est le dernier Space, afficher l'erreur finale
+          if (i === spacesToTry.length - 1) {
+            cleanLoading();
+            state.isGenerating = false;
+
+            const errorMessages = {
+              timeout: {
+                title: '⏱ Délai dépassé',
+                message: 'Le serveur met trop de temps à répondre (90s). Les Spaces gratuits sont parfois lents. Réessayez dans quelques instants ou utilisez un autre Space ID.'
+              },
+              sleeping: {
+                title: '💤 Space en veille',
+                message: "Ce modèle IA est en pause ou en veille. Essayez de l'ouvrir sur huggingface.co pour le réactiver, ou utilisez un autre Space ID."
+              },
+              quota: {
+                title: '🔌 Serveur saturé',
+                message: 'Le serveur gratuit est très sollicité. Réessayez un peu plus tard ou configurez un autre Space ID.'
+              },
+              'endpoint': {
+                title: '⚙️ API incompatible',
+                message: "Ce Space n'a pas d'endpoint compatible avec notre appel. Vous pouvez essayer un autre Space ID dans la configuration."
+              },
+              generic: {
+                title: '❌ Erreur de génération',
+                message: `Impossible de générer le rendu. Dernière erreur : ${error.message || 'Erreur inconnue'}. Vérifiez que le Space ID est correct et que le Space est "Running" sur Hugging Face.`
+              }
+            };
+
+            const err = errorMessages[errorType] || errorMessages.generic;
+            showErrorState(err.title, err.message);
+            showToast(err.title, 'error', 6000);
+            return;
+          }
+
+          // Sinon, continuer avec le Space suivant
+          continue;
+        }
+      }
+
+      // Ne devrait jamais arriver, mais sécurité
+      cleanLoading();
+      state.isGenerating = false;
+      resetToEmpty();
+    }
+
+    // ─── Événements boutons ─────────────────────────────────────────────
+    generateBtn.addEventListener('click', handleGenerate);
+
+    errorRetryBtn.addEventListener('click', () => {
+      // Cacher l'erreur, remettre l'état vide, puis re-générer
+      resultError.classList.add('hidden');
+      resetToEmpty();
+      handleGenerate();
+    });
+
+    retryBtn.addEventListener('click', () => {
+      // Re-générer avec les mêmes paramètres
+      handleGenerate();
+    });
+
+    // ─── Téléchargement ──────────────────────────────────────────────────
+    downloadBtn.addEventListener('click', async () => {
+      const url = state.currentResultUrl;
+      if (!url) return;
+
+      try {
+        // Tentative principale : fetch → blob
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `dzarchi-rendu-${Date.now()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+
+        showToast('✅ Téléchargement réussi', 'success', 3000);
+
+      } catch (err) {
+        // Repli CORS : ouvrir dans un nouvel onglet
+        showToast("Le téléchargement direct n'est pas disponible (CORS). Ouverture dans un nouvel onglet → clic droit → Enregistrer l'image", 'info', 6000);
+        window.open(url, '_blank');
+      }
+    });
+
+    // ─── Espace Help Modal ──────────────────────────────────────────────
+    let helpVisible = false;
+    const spaceHelpBtn = $('#spaceHelpBtn');
+    const spaceHint = $('#spaceHint');
+
+    spaceHelpBtn.addEventListener('click', () => {
+      helpVisible = !helpVisible;
+      if (helpVisible) {
+        spaceHint.innerHTML = `
+          <strong class="text-slate-500">💡 Qu'est-ce qu'un Space ID ?</strong><br>
+          Les Spaces Hugging Face sont des applications IA gratuites hébergées dans le cloud.<br><br>
+          Chaque Space a un ID unique au format <code class="text-indigo-400/80">utilisateur/nom-du-space</code>.<br><br>
+          <strong class="text-slate-500">Exemples :</strong><br>
+          • <code class="text-indigo-400/80">stabilityai/stable-diffusion-3.5-large</code><br>
+          • <code class="text-indigo-400/80">black-forest-labs/FLUX.1-schnell</code><br><br>
+          <strong class="text-amber-400/80">⚠️ Important :</strong> Le Space doit être en statut "Running" sur huggingface.co/spaces. Les Spaces gratuits se mettent en veille après inactivité.<br><br>
+          Laissez vide pour utiliser nos Spaces par défaut (avec fallback automatique).
+        `;
+      } else {
+        spaceHint.textContent = "Laissez vide pour utiliser le Space par défaut. Vous pouvez utiliser n'importe quel Space Gradio public compatible avec la génération d'images.";
+      }
+    });
+
+    // ─── Changements de paramètres ──────────────────────────────────────
+    // Réactiver le bouton quand on modifie des paramètres avec une image déjà chargée
+    [projectType, styleSelect, promptInput, spaceInput].forEach(el => {
+      el.addEventListener('change', updateGenerateButton);
+      el.addEventListener('input', updateGenerateButton);
+    });
+
+    // ─── Langue (FR/AR) ──────────────────────────────────────────────────
+    const translations = {
+      fr: {
+        uploadLabel: 'Plan 2D',
+        configLabel: 'Configuration',
+        typeLabel: 'Type de projet',
+        styleLabel: 'Style architectural',
+        promptLabel: 'Description créative',
+        spaceLabel: 'Hugging Face Space ID',
+        spaceHelp: "Qu'est-ce que c'est ?",
+        resultLabel: 'Rendu 3D',
+        resultEmptyText: 'En attente d\'une génération',
+        resultEmptyHint: 'Téléversez un plan et cliquez sur Générer',
+        downloadText: 'Télécharger HD',
+        retryText: 'Re-générer',
+        generateText: '✨ Générer le rendu 3D',
+        tagline: 'Téléversez votre plan 2D, choisissez un style, laissez l\'IA générer une perspective 3D photoréaliste',
+        fallbackInfo: '2 Spaces de secours configurés automatiquement en cas d\'indisponibilité',
+        errorRetryText: 'Réessayer',
+      },
+      ar: {
+        uploadLabel: 'المخطط ثنائي الأبعاد',
+        configLabel: 'الإعدادات',
+        typeLabel: 'نوع المشروع',
+        styleLabel: 'النمط المعماري',
+        promptLabel: 'الوصف الإبداعي',
+        spaceLabel: 'معرف Space في Hugging Face',
+        spaceHelp: 'ما هذا؟',
+        resultLabel: 'العرض ثلاثي الأبعاد',
+        resultEmptyText: 'في انتظار التوليد',
+        resultEmptyHint: 'ارفع مخططًا وانقر على "توليد"',
+        downloadText: 'تنزيل عالي الدقة',
+        retryText: 'إعادة التوليد',
+        generateText: '✨ توليد العرض ثلاثي الأبعاد',
+        tagline: 'ارفع مخططك ثنائي الأبعاد، اختر نمطًا، ودع الذكاء الاصطناعي يولد منظورًا ثلاثي الأبعاد واقعيًا',
+        fallbackInfo: 'تم تكوين 2 Spaces احتياطيًا تلقائيًا في حالة عدم التوفر',
+        errorRetryText: 'إعادة المحاولة',
+      }
+    };
+
+    function setLanguage(lang) {
+      state.lang = lang;
+      langLabel.textContent = lang.toUpperCase();
+
+      const t = translations[lang];
+      if (!t) return;
+
+      const elements = {
+        '#uploadLabel': t.uploadLabel,
+        '#configLabel': t.configLabel,
+        '#typeLabel': t.typeLabel,
+        '#styleLabel': t.styleLabel,
+        '#promptLabel': t.promptLabel,
+        '#spaceLabel': t.spaceLabel,
+        '#spaceHelpText': t.spaceHelp,
+        '#resultLabel': t.resultLabel,
+        '#resultEmptyText': t.resultEmptyText,
+        '#resultEmptyHint': t.resultEmptyHint,
+        '#downloadText': t.downloadText,
+        '#retryText': t.retryText,
+        '#generateText': t.generateText,
+        '#tagline': t.tagline,
+        '#fallbackInfo': t.fallbackInfo,
+        '#errorRetryText': t.errorRetryText,
+      };
+
+      Object.entries(elements).forEach(([sel, text]) => {
+        const el = document.querySelector(sel);
+        if (el) el.textContent = text;
+      });
+
+      // Direction RTL
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      document.documentElement.lang = lang;
+
+      // Font family
+      document.body.style.fontFamily = lang === 'ar'
+        ? "'Tajawal', 'Inter', system-ui, sans-serif"
+        : "'Inter', system-ui, sans-serif";
+
+      localStorage.setItem('dzarchi-lang', lang);
+    }
+
+    langToggle.addEventListener('click', () => {
+      setLanguage(state.lang === 'fr' ? 'ar' : 'fr');
+    });
+
+    // ─── Initialisation ─────────────────────────────────────────────────
+    (function init() {
+      // Restaurer la langue
+      const savedLang = localStorage.getItem('dzarchi-lang') || 'fr';
+      setLanguage(savedLang);
+
+      // Restaurer le Space ID si saisi
+      const savedSpace = localStorage.getItem('dzarchi-space');
+      if (savedSpace) spaceInput.value = savedSpace;
+
+      // Sauvegarder le Space ID
+      spaceInput.addEventListener('change', () => {
+        localStorage.setItem('dzarchi-space', spaceInput.value);
+      });
+
+      // État initial du bouton
+      updateGenerateButton();
+
+      // Petite animation d'entrée pour les éléments
+      document.querySelectorAll('.glass').forEach((el, i) => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(15px)';
+        setTimeout(() => {
+          el.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
+          el.style.opacity = '1';
+          el.style.transform = 'translateY(0)';
+        }, 100 + i * 100);
+      });
+
+      // Icônes Lucide
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+
+      console.log('%c🏗️ DzArchi AI — Architecture Intelligence', 'font-size:20px; font-weight:bold; color:#6366f1');
+      console.log('%cConstruit par JARVIS pour Ilyes — juillet 2026', 'font-size:12px; color:#94a3b8');
+    })();
+  </script>
+</body>
+</html>
