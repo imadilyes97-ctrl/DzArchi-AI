@@ -72,6 +72,7 @@
             'border-flow': 'borderFlow 3s linear infinite',
             'spin-slow': 'spin 3s linear infinite',
             'breathe': 'breathe 4s ease-in-out infinite',
+            'grid': 'grid 20s linear infinite',
           },
           keyframes: {
             gradient: {
@@ -123,6 +124,10 @@
             breathe: {
               '0%, 100%': { transform: 'scale(1)', opacity: '0.6' },
               '50%': { transform: 'scale(1.05)', opacity: '0.8' },
+            },
+            grid: {
+              '0%': { transform: 'translateY(0) translateX(0)' },
+              '100%': { transform: 'translateY(60px) translateX(60px)' },
             },
           }
         }
@@ -195,6 +200,7 @@
         linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
       background-size: 60px 60px;
       pointer-events: none;
+      animation: grid 20s linear infinite;
     }
 
     /* --- Glassmorphism Cards --- */
@@ -204,10 +210,12 @@
       -webkit-backdrop-filter: blur(24px);
       border: 1px solid rgba(255,255,255,0.06);
       box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .glass:hover {
       border-color: rgba(255,255,255,0.1);
       box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      transform: translateY(-1px);
     }
     .glass-strong {
       background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
@@ -254,7 +262,7 @@
       transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* --- Gradient Button --- */
+    /* --- Gradient Button Premium --- */
     .btn-premium {
       position: relative;
       overflow: hidden;
@@ -273,7 +281,7 @@
       background: linear-gradient(135deg, #4f46e5, #7c3aed, #6366f1);
       background-size: 200% 200%;
       animation: gradient 4s ease infinite;
-      box-shadow: 0 4px 20px rgba(99,102,241,0.3), 0 0 0 0 rgba(99,102,241,0);
+      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
     }
     .btn-premium::before {
       content: '';
@@ -301,21 +309,9 @@
       cursor: not-allowed;
       transform: none;
     }
-    .btn-premium span, .btn-premium i {
+    .btn-premium > * {
       position: relative;
       z-index: 1;
-    }
-    /* Ripple effect */
-    .btn-premium .ripple {
-      position: absolute;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.3);
-      transform: scale(0);
-      animation: ripple 0.6s ease-out;
-      pointer-events: none;
-    }
-    @keyframes ripple {
-      to { transform: scale(4); opacity: 0; }
     }
 
     /* --- Custom Select / Input --- */
@@ -350,7 +346,9 @@
 
     /* --- Labels --- */
     .label-premium {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       font-size: 0.8rem;
       font-weight: 600;
       color: #94a3b8;
@@ -359,7 +357,7 @@
       margin-bottom: 0.5rem;
     }
 
-    /* --- Loading Spinner Premium --- */
+    /* --- Loading Spinner Premium (concentric rings) --- */
     .loader-ring {
       position: relative;
       width: 64px;
@@ -397,15 +395,7 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* --- Status Message Cycling --- */
-    .message-cycle {
-      animation: fadeIn 0.4s ease-out;
-    }
-    .message-cycle.exit {
-      animation: slideDown 0.3s ease-in reverse;
-    }
-
-    /* --- Image Reveal --- */
+    /* --- Image Reveal Animation --- */
     .reveal-image {
       animation: imageReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       filter: blur(20px);
@@ -419,7 +409,7 @@
       }
     }
 
-    /* --- Toast Container --- */
+    /* --- Toast Notifications --- */
     .toast-container {
       position: fixed;
       top: 1.5rem;
@@ -471,16 +461,16 @@
       to { transform: translateX(100%); opacity: 0; }
     }
 
-    /* --- Scrollbar --- */
+    /* --- Custom Scrollbar (Webkit) --- */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 9999px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
 
-    /* --- Responsive helpers --- */
+    /* --- Responsive --- */
     @media (max-width: 768px) {
       .drop-zone { padding: 1.5rem 1rem; }
-      .btn-premium { padding: 0.875rem 1.5rem; }
+      .btn-premium { padding: 0.875rem 1.5rem; font-size: 0.9rem; }
     }
 
     /* --- Selection --- */
@@ -496,7 +486,7 @@
       border-radius: 4px;
     }
 
-    /* --- Skeleton shimmer placeholder --- */
+    /* --- Skeleton shimmer --- */
     .skeleton {
       background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
       background-size: 200% 100%;
@@ -521,6 +511,9 @@
     .card-glow-border:hover::after {
       opacity: 1;
     }
+
+    /* --- Scrollbar Firefox --- */
+    * { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.3) transparent; }
   </style>
 </head>
 
@@ -533,7 +526,7 @@
   </div>
   <div class="bg-grid" aria-hidden="true"></div>
 
-  <!-- ===== TOASTS ===== -->
+  <!-- ===== TOASTS CONTAINER ===== -->
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- ===== APPLICATION ===== -->
@@ -561,7 +554,7 @@
             </div>
           </div>
 
-          <!-- Right: Langue + GitHub -->
+          <!-- Right: Langue + Lien HF -->
           <div class="flex items-center gap-3">
             <button id="langToggle" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200" title="Changer de langue">
               <span id="langLabel">FR</span>
@@ -575,12 +568,12 @@
       </div>
     </header>
 
-    <!-- ===== MAIN CONTENT ===== -->
+    <!-- ===== MAIN ===== -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
 
       <!-- Hero Tagline -->
-      <div class="text-center mb-8 md:mb-10 animate-fade-in">
-        <h2 class="text-2xl md:text-4xl font-display font-extrabold text-white tracking-tight">
+      <div class="text-center mb-8 md:mb-10" style="animation: fadeIn 0.6s ease-out both;">
+        <h2 class="text-2xl md:text-4xl font-display font-extrabold text-white tracking-tight leading-tight">
           Plan <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400">→</span> 3D
         </h2>
         <p class="text-slate-500 text-sm md:text-base mt-2 max-w-xl mx-auto" id="tagline">
@@ -588,7 +581,7 @@
         </p>
       </div>
 
-      <!-- Grid principale -->
+      <!-- Grid principale : 5 colonnes desktop, 1 mobile -->
       <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 md:gap-6">
 
         <!-- ===== PANEL GAUCHE : Upload + Contrôles (3/5) ===== -->
@@ -596,16 +589,15 @@
 
           <!-- Upload Zone -->
           <div class="glass rounded-2xl p-5 md:p-6 card-glow-border">
-            <label class="label-premium flex items-center gap-2">
+            <label class="label-premium">
               <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               <span id="uploadLabel">Plan 2D</span>
             </label>
 
-            <!-- Drop zone -->
             <div id="dropZone" class="drop-zone mt-2">
               <input type="file" id="fileInput" accept="image/png,image/jpeg" class="hidden" />
 
-              <!-- État vide -->
+              <!-- État vide (aucune image) -->
               <div id="emptyState" class="space-y-3">
                 <div class="drop-icon w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center">
                   <svg class="w-7 h-7 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -623,11 +615,11 @@
                 </div>
               </div>
 
-              <!-- Aperçu image -->
+              <!-- Aperçu image (après upload) -->
               <div id="previewState" class="hidden relative">
                 <div class="relative rounded-xl overflow-hidden bg-surface-300/50">
                   <img id="imagePreview" class="w-full h-48 md:h-56 object-contain" alt="Aperçu du plan" />
-                  <button id="deleteImage" class="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-black/80 transition-all duration-200" title="Supprimer">
+                  <button id="deleteImage" class="absolute top-2 right-2 w-8 h-8 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-black/80 transition-all duration-200" title="Supprimer l'image">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
@@ -639,9 +631,9 @@
             </div>
           </div>
 
-          <!-- Contrôles -->
+          <!-- Contrôles : Type, Style, Prompt, Space ID -->
           <div class="glass rounded-2xl p-5 md:p-6 card-glow-border">
-            <label class="label-premium flex items-center gap-2 mb-4">
+            <label class="label-premium">
               <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
               <span id="configLabel">Configuration</span>
             </label>
@@ -655,7 +647,7 @@
                   <option value="interieure">🪟 Intérieure</option>
                 </select>
               </div>
-              <!-- Style -->
+              <!-- Style architectural -->
               <div>
                 <label class="text-xs font-medium text-slate-500 mb-1.5 block" id="styleLabel">Style architectural</label>
                 <select id="styleSelect" class="input-premium">
@@ -667,17 +659,17 @@
               </div>
             </div>
 
-            <!-- Prompt -->
+            <!-- Prompt personnalisable -->
             <div class="mt-4">
               <label class="text-xs font-medium text-slate-500 mb-1.5 block" id="promptLabel">Description créative</label>
               <textarea id="promptInput" class="input-premium" placeholder="Décrivez l'ambiance souhaitée...">Architecture moderne avec lumière naturelle, matériaux nobles, ambiance chaleureuse et professionnelle</textarea>
             </div>
 
-            <!-- Space ID Hugging Face -->
+            <!-- Space ID Hugging Face (configurable) -->
             <div class="mt-4">
               <div class="flex items-center justify-between mb-1.5">
                 <label class="text-xs font-medium text-slate-500" id="spaceLabel">Hugging Face Space ID</label>
-                <button id="spaceHelpBtn" class="text-[10px] text-indigo-400/70 hover:text-indigo-300 transition-colors flex items-center gap-1" title="Aide">
+                <button id="spaceHelpBtn" class="text-[10px] text-indigo-400/70 hover:text-indigo-300 transition-colors flex items-center gap-1" type="button">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                   <span id="spaceHelpText">Qu'est-ce que c'est ?</span>
                 </button>
@@ -696,7 +688,7 @@
             </div>
           </div>
 
-          <!-- Generate Button -->
+          <!-- Bouton Générer -->
           <button id="generateBtn" class="btn-premium w-full text-base md:text-lg py-4 md:py-5" disabled>
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -708,15 +700,14 @@
         <!-- ===== PANEL DROIT : Résultat (2/5) ===== -->
         <div class="lg:col-span-2">
           <div class="glass rounded-2xl p-5 md:p-6 h-full flex flex-col card-glow-border">
-            <label class="label-premium flex items-center gap-2 mb-3">
+            <label class="label-premium">
               <svg class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
               <span id="resultLabel">Rendu 3D</span>
             </label>
 
-            <!-- Conteneur résultat -->
             <div id="resultContainer" class="flex-1 flex flex-col">
 
-              <!-- État vide (défaut) -->
+              <!-- État vide (défaut avant génération) -->
               <div id="resultEmpty" class="flex-1 flex flex-col items-center justify-center text-center py-12">
                 <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500/5 to-violet-500/5 border border-indigo-500/10 flex items-center justify-center mb-4">
                   <svg class="w-9 h-9 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -732,23 +723,19 @@
                 <div class="loader-ring mb-5">
                   <div></div><div></div><div></div>
                 </div>
-                <p id="loadingMessage" class="text-sm font-semibold text-slate-300 message-cycle">
-                  Connexion sécurisée établie
-                </p>
-                <p id="loadingSub" class="text-xs text-slate-600 mt-1.5 message-cycle">
-                  Chiffrement TLS • 256-bit
-                </p>
-                <!-- Barre de progression subtile -->
+                <p id="loadingMessage" class="text-sm font-semibold text-slate-300">Connexion sécurisée</p>
+                <p id="loadingSub" class="text-xs text-slate-600 mt-1.5">Chiffrement TLS établi</p>
+                <!-- Barre de progression indicative -->
                 <div class="w-48 h-1 rounded-full bg-white/5 mt-4 overflow-hidden">
                   <div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" id="loadingProgress" style="width: 15%;"></div>
                 </div>
                 <p class="text-[10px] text-slate-700 mt-2" id="loadingTimer">0s</p>
               </div>
 
-              <!-- État résultat -->
+              <!-- État succès (image générée) -->
               <div id="resultSuccess" class="hidden flex-1 flex flex-col">
                 <div class="relative flex-1 rounded-xl overflow-hidden bg-surface-300/30 border border-white/5 min-h-[250px] flex items-center justify-center">
-                  <img id="resultImage" class="w-full h-auto max-h-[400px] object-contain reveal-image opacity-0" alt="Rendu 3D généré" />
+                  <img id="resultImage" class="w-full h-auto max-h-[400px] object-contain" alt="Rendu 3D généré" />
                   <div id="imagePlaceholder" class="absolute inset-0 skeleton m-0 rounded-none hidden"></div>
                 </div>
                 <div class="flex gap-2 mt-4">
@@ -769,7 +756,7 @@
                   <svg class="w-7 h-7 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                 </div>
                 <p id="errorTitle" class="text-sm font-semibold text-red-400">Erreur de génération</p>
-                <p id="errorMessage" class="text-xs text-slate-500 mt-2 max-w-[250px] leading-relaxed">Une erreur est survenue. Veuillez réessayer.</p>
+                <p id="errorMessage" class="text-xs text-slate-500 mt-2 max-w-[250px] leading-relaxed">Une erreur est survenue.</p>
                 <button id="errorRetryBtn" class="mt-4 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center gap-2">
                   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   <span id="errorRetryText">Réessayer</span>
@@ -803,118 +790,101 @@
 
     // ─── Configuration ───────────────────────────────────────────────────
     const CONFIG = {
-      // Liste des Spaces par défaut (testés et fiables pour la génération d'images)
+      // Liste des Spaces par défaut — testés et fiables pour génération d'images
       DEFAULT_SPACES: [
         'stabilityai/stable-diffusion-3.5-large',
         'black-forest-labs/FLUX.1-schnell',
         'stabilityai/stable-diffusion-xl-base-1.0',
       ],
-      // Messages de chargement qui tournent en boucle
+      // Messages de chargement qui tournent en boucle (pas de limite)
       LOADING_MESSAGES: [
         { msg: 'Connexion sécurisée', sub: 'Chiffrement TLS établi' },
         { msg: 'Analyse du plan 2D', sub: 'Détection des contours et structures' },
         { msg: 'Application des matériaux', sub: 'Textures et rendu des surfaces' },
         { msg: 'Calcul des ombres', sub: 'Éclairage global et ray tracing' },
-        { msg: 'Génération des détails', sub: 'Affinage des textures hautes résolutions' },
+        { msg: 'Génération des détails', sub: 'Affinage des textures haute résolution' },
         { msg: 'Finalisation HD', sub: 'Post-processing et optimisation' },
-        { msg: 'Toujours en cours…', sub: "Les serveurs gratuits peuvent être lents" },
-        { msg: 'Toujours pas de réponse ?', sub: 'Les Spaces gratuits mettent parfois 2-3 min' },
+        { msg: 'Toujours en cours…', sub: 'Les serveurs gratuits peuvent être lents' },
+        { msg: 'Encore un peu de patience', sub: 'Les Spaces gratuits mettent parfois 2-3 min' },
       ],
-      // Timeout maximum (90s comme recommandé par la spec)
-      TIMEOUT_MS: 90000,
-      // Taille max du fichier (10 Mo)
-      MAX_FILE_SIZE: 10 * 1024 * 1024,
-      // Formats acceptés
+      TIMEOUT_MS: 90000,            // 90s max par appel
+      MAX_FILE_SIZE: 10 * 1024 * 1024, // 10 Mo
       ACCEPTED_TYPES: ['image/png', 'image/jpeg'],
     };
 
-    // ─── État de l'application ──────────────────────────────────────────
+    // ─── État global ─────────────────────────────────────────────────────
     const state = {
-      currentFile: null,       // File object uploadé
+      currentFile: null,
       isGenerating: false,
       currentResultUrl: null,
       abortController: null,
-      currentSpaceIndex: 0,    // Pour le fallback entre Spaces
-      lang: 'fr',              // 'fr' | 'ar'
+      currentSpaceIndex: 0,
+      lang: 'fr',
     };
 
-    // ─── DOM refs ────────────────────────────────────────────────────────
+    // ─── DOM refs (caching) ──────────────────────────────────────────────
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
 
-    const dropZone = $('#dropZone');
-    const fileInput = $('#fileInput');
-    const emptyState = $('#emptyState');
-    const previewState = $('#previewState');
-    const imagePreview = $('#imagePreview');
-    const deleteImage = $('#deleteImage');
-    const browseText = $('#browseText');
-    const fileInfo = $('#fileInfo');
-    const generateBtn = $('#generateBtn');
-    const generateText = $('#generateText');
-    const spaceInput = $('#spaceInput');
-    const projectType = $('#projectType');
-    const styleSelect = $('#styleSelect');
-    const promptInput = $('#promptInput');
-    const resultEmpty = $('#resultEmpty');
-    const resultLoading = $('#resultLoading');
-    const resultSuccess = $('#resultSuccess');
-    const resultError = $('#resultError');
-    const resultImage = $('#resultImage');
-    const loadingMessage = $('#loadingMessage');
-    const loadingSub = $('#loadingSub');
-    const loadingProgress = $('#loadingProgress');
-    const loadingTimer = $('#loadingTimer');
-    const downloadBtn = $('#downloadBtn');
-    const retryBtn = $('#retryBtn');
-    const errorTitle = $('#errorTitle');
-    const errorMessage = $('#errorMessage');
-    const errorRetryBtn = $('#errorRetryBtn');
-    const langToggle = $('#langToggle');
-    const langLabel = $('#langLabel');
-    const toastContainer = $('#toastContainer');
-
-    // ─── Utilitaires ────────────────────────────────────────────────────
-    function formatFileSize(bytes) {
-      if (bytes < 1024) return bytes + ' o';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko';
-      return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
-    }
-
-    function getFileExtension(filename) {
-      return filename?.split('.').pop()?.toLowerCase() || '';
-    }
+    const dropZone           = $('#dropZone');
+    const fileInput          = $('#fileInput');
+    const emptyState         = $('#emptyState');
+    const previewState       = $('#previewState');
+    const imagePreview       = $('#imagePreview');
+    const deleteImage        = $('#deleteImage');
+    const browseText         = $('#browseText');
+    const fileInfo           = $('#fileInfo');
+    const generateBtn        = $('#generateBtn');
+    const generateText       = $('#generateText');
+    const spaceInput         = $('#spaceInput');
+    const projectType        = $('#projectType');
+    const styleSelect        = $('#styleSelect');
+    const promptInput        = $('#promptInput');
+    const resultEmpty        = $('#resultEmpty');
+    const resultLoading      = $('#resultLoading');
+    const resultSuccess      = $('#resultSuccess');
+    const resultError        = $('#resultError');
+    const resultImage        = $('#resultImage');
+    const loadingMessage     = $('#loadingMessage');
+    const loadingSub         = $('#loadingSub');
+    const loadingProgress    = $('#loadingProgress');
+    const loadingTimer       = $('#loadingTimer');
+    const downloadBtn        = $('#downloadBtn');
+    const retryBtn           = $('#retryBtn');
+    const errorTitle         = $('#errorTitle');
+    const errorMessage       = $('#errorMessage');
+    const errorRetryBtn      = $('#errorRetryBtn');
+    const langToggle         = $('#langToggle');
+    const langLabel          = $('#langLabel');
+    const toastContainer     = $('#toastContainer');
 
     // ─── Toast System ────────────────────────────────────────────────────
     function showToast(message, type = 'info', duration = 4000) {
       const toast = document.createElement('div');
       toast.className = `toast toast-${type}`;
-
       const icons = {
         success: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-        error: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-        info: '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        error:   '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+        info:    '<svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
       };
-
       toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
       toastContainer.appendChild(toast);
-
       setTimeout(() => {
         toast.classList.add('removing');
         setTimeout(() => toast.remove(), 300);
       }, duration);
     }
 
-    // ─── Gestion du fichier / Upload ────────────────────────────────────
+    // ─── Gestion du fichier uploadé ─────────────────────────────────────
     function handleFile(file) {
-      // Validation stricte
       if (!file) return;
 
+      // Validation : type
       if (!CONFIG.ACCEPTED_TYPES.includes(file.type)) {
-        showToast('Format non supporté. Utilisez PNG ou JPG.', 'error', 5000);
+        showToast('Format non supporté. Utilisez PNG ou JPG uniquement.', 'error', 5000);
         return;
       }
-
+      // Validation : taille
       if (file.size > CONFIG.MAX_FILE_SIZE) {
         showToast(`Fichier trop volumineux (${formatFileSize(file.size)}). Maximum 10 Mo.`, 'error', 5000);
         return;
@@ -945,29 +915,33 @@
       updateGenerateButton();
     }
 
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' o';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' Mo';
+    }
+
     // ─── Drag & Drop ─────────────────────────────────────────────────────
     dropZone.addEventListener('click', (e) => {
       if (e.target.closest('#deleteImage')) return;
       fileInput.click();
     });
-
-    // Séparation du bouton "supprimer" pour éviter le conflit de clic
     deleteImage.addEventListener('click', (e) => {
       e.stopPropagation();
       clearFile();
     });
-
     fileInput.addEventListener('change', () => {
       if (fileInput.files?.length) handleFile(fileInput.files[0]);
     });
 
-    // Drag events
+    // Drag enter / over
     ['dragenter', 'dragover'].forEach(evt => {
       dropZone.addEventListener(evt, (e) => {
         e.preventDefault();
         if (!state.currentFile) dropZone.classList.add('dragover');
       });
     });
+    // Drag leave / drop
     ['dragleave', 'drop'].forEach(evt => {
       dropZone.addEventListener(evt, (e) => {
         e.preventDefault();
@@ -980,18 +954,14 @@
       const files = e.dataTransfer?.files;
       if (files?.length) handleFile(files[0]);
     });
-
-    // Browse text click
     browseText.addEventListener('click', () => fileInput.click());
 
-    // ─── Génération ──────────────────────────────────────────────────────
+    // ─── État du bouton Générer ─────────────────────────────────────────
     function updateGenerateButton() {
-      const hasFile = !!state.currentFile;
-      const isGenerating = state.isGenerating;
-      generateBtn.disabled = !hasFile || isGenerating;
+      generateBtn.disabled = !state.currentFile || state.isGenerating;
     }
 
-    // Mapping des styles → prompts pour enrichir la requête
+    // ─── Construction du prompt enrichi ─────────────────────────────────
     function buildEnhancedPrompt() {
       const type = projectType.value;
       const style = styleSelect.value;
@@ -1003,17 +973,15 @@
         'mediterraneen': 'Mediterranean architecture, warm tones, terracotta, arched windows, Mediterranean vegetation, sunny',
         'industriel': 'Industrial loft style, exposed brick, steel beams, concrete, large windows, urban chic',
       };
-
       const typeMap = {
         'exterieure': 'exterior view, building facade, outdoor architecture, landscape',
         'interieure': 'interior view, indoor space, room perspective, interior design',
       };
 
-      return `${styleMap[style] || 'modern architecture'}, ${typeMap[type] || 'architectural'}, ${userPrompt}, architectural photography, photorealistic, 4K, highly detailed, professional rendering`;
+      return `${styleMap[style] || 'modern architecture'}, ${typeMap[type] || 'architectural view'}, ${userPrompt}, architectural photography, photorealistic, 4K, highly detailed, professional architectural rendering, dramatic lighting`;
     }
 
-    // Messages de chargement rotatifs
-    let loadingInterval = null;
+    // ─── Messages de chargement rotatifs ────────────────────────────────
     function startLoadingMessages() {
       let index = 0;
       let timer = 0;
@@ -1022,31 +990,26 @@
         const m = CONFIG.LOADING_MESSAGES[index % CONFIG.LOADING_MESSAGES.length];
         loadingMessage.textContent = m.msg;
         loadingSub.textContent = m.sub;
-
-        // Barre de progression oscillante (pas une vraie progression, juste visuel)
-        const progress = 15 + (index * 10) % 70;
+        const progress = 15 + (index * 8) % 70;
         loadingProgress.style.width = `${progress}%`;
-
         index++;
       };
-
       updateMessage();
 
-      // Timer en secondes
       const timerInterval = setInterval(() => {
         timer++;
         loadingTimer.textContent = `${timer}s`;
       }, 1000);
 
-      loadingInterval = setInterval(updateMessage, 5000);
+      const msgInterval = setInterval(updateMessage, 5000);
 
       return () => {
-        clearInterval(loadingInterval);
+        clearInterval(msgInterval);
         clearInterval(timerInterval);
-        loadingInterval = null;
       };
     }
 
+    // ─── Changements d'état UI ──────────────────────────────────────────
     function showLoadingState() {
       resultEmpty.classList.add('hidden');
       resultSuccess.classList.add('hidden');
@@ -1062,22 +1025,20 @@
       resultError.classList.add('hidden');
       resultSuccess.classList.remove('hidden');
 
-      // Réinitialiser l'animation en clonant l'élément
+      // Cloner pour réinitialiser l'animation de reveal
       const newImg = resultImage.cloneNode(true);
       resultImage.parentNode.replaceChild(newImg, resultImage);
-      // Mettre à jour la ref
-      // (On récupère la nouvelle ref)
+      // Mettre à jour la ref (nouvel élément)
       const updatedImg = document.querySelector('#resultImage');
       updatedImg.src = imageUrl;
       updatedImg.alt = 'Rendu 3D généré';
-      // Forcer la réanimation
       updatedImg.classList.remove('reveal-image');
-      void updatedImg.offsetWidth; // reflow
+      // Forcer reflow + animation
+      void updatedImg.offsetWidth;
       updatedImg.classList.add('reveal-image');
       updatedImg.style.opacity = '1';
 
       state.currentResultUrl = imageUrl;
-
       generateBtn.disabled = false;
       generateText.textContent = '✨ Générer le rendu 3D';
     }
@@ -1089,7 +1050,6 @@
       resultError.classList.remove('hidden');
       errorTitle.textContent = title;
       errorMessage.textContent = message;
-
       generateBtn.disabled = false;
       generateText.textContent = '✨ Générer le rendu 3D';
     }
@@ -1103,13 +1063,12 @@
       generateText.textContent = '✨ Générer le rendu 3D';
     }
 
-    // ─── Appel API Gradio ────────────────────────────────────────────────
+    // ─── Appel API Gradio avec découverte dynamique ─────────────────────
     async function tryGenerate(spaceId, imageFile, prompt, attempt = 0) {
       const MAX_RETRIES = 2;
       let timeoutId = null;
 
       try {
-        // Timeout controller
         state.abortController = new AbortController();
         timeoutId = setTimeout(() => {
           state.abortController?.abort();
@@ -1120,20 +1079,19 @@
           signal: state.abortController.signal,
         });
 
-        // Découverte dynamique de l'API du Space
-        // On inspecte /?view=api pour connaître les endpoints réels
+        // Découverte dynamique de l'API via /?view=api
         let endpoints = [];
         try {
           const apiInfo = await client.view_api();
-          // Extraire tous les endpoints disponibles
           if (apiInfo?.named_endpoints) {
             endpoints = Object.keys(apiInfo.named_endpoints).map(fn => ({
               fn: '/' + fn.replace(/^\//, ''),
-              discovered: true
+              parameters: apiInfo.named_endpoints[fn]?.parameters,
+              discovered: true,
             }));
           }
         } catch {
-          // fallback: endpoints communs
+          // Fallback : endpoints communs aux Spaces SD / FLUX
           endpoints = [
             { fn: '/predict' },
             { fn: '/run' },
@@ -1144,15 +1102,13 @@
           ];
         }
 
-        // Préparer le fichier image
         const imageBlob = imageFile;
-
         let result = null;
         let lastError = null;
 
+        // Essayer chaque endpoint jusqu'au premier qui répond
         for (const ep of endpoints) {
           try {
-            // Adapter les paramètres selon ce qu'on a découvert
             const params = buildGradioParams(ep, prompt, imageBlob);
             result = await client.predict(ep.fn, params, {
               signal: state.abortController.signal,
@@ -1170,9 +1126,9 @@
           throw new Error(lastError?.message || 'Aucune réponse du modèle');
         }
 
-        // Extraire l'image du résultat (varie selon le Space)
-        let imageUrl = null;
+        // Extraction de l'image du résultat (formats variés selon le Space)
         const data = result.data;
+        let imageUrl = null;
 
         if (typeof data === 'string' && (data.startsWith('http') || data.startsWith('data:'))) {
           imageUrl = data;
@@ -1194,7 +1150,7 @@
           if (data instanceof Blob) {
             imageUrl = URL.createObjectURL(data);
           } else {
-            throw new Error("Format de réponse non reconnu. L'image n'a pas pu être extraite.");
+            throw new Error("L'image n'a pas pu être extraite de la réponse du Space.");
           }
         }
 
@@ -1207,6 +1163,7 @@
           throw new Error('timeout');
         }
 
+        // Retry avec backoff progressif
         if (attempt < MAX_RETRIES) {
           const delay = (attempt + 1) * 3000;
           await new Promise(r => setTimeout(r, delay));
@@ -1217,24 +1174,21 @@
       }
     }
 
-    /** Construit les paramètres adaptés à l'endpoint Gradio découvert */
+    /** Construit les paramètres adaptés à l'endpoint Gradio */
     function buildGradioParams(endpoint, prompt, imageBlob) {
-      // Si l'endpoint a été découvert via view_api(), on connaît ses paramètres
+      // Endpoint découvert via view_api() → on utilise les vrais noms de paramètres
       if (endpoint.discovered && endpoint.parameters) {
         const params = {};
         endpoint.parameters.forEach((p, i) => {
           const name = p.label || p.parameter_name || `param_${i}`;
-          // Deviner le type de paramètre par son nom
           const lower = name.toLowerCase();
           if (lower.includes('prompt') || lower.includes('text')) {
             params[name] = prompt;
-          } else if (lower.includes('image') || lower.includes('img')) {
+          } else if (lower.includes('image') || lower.includes('img') || lower.includes('file')) {
             params[name] = imageBlob;
           } else if (i === 0) {
-            // Premier paramètre inconnu → prompt
             params[name] = prompt;
           } else if (i === 1) {
-            // Second → image
             params[name] = imageBlob;
           } else {
             params[name] = '';
@@ -1242,8 +1196,7 @@
         });
         return params;
       }
-
-      // Fallback: ordre positionnel classique SD
+      // Fallback : ordre positionnel classique (prompt, image)
       return { prompt, image: imageBlob };
     }
 
@@ -1253,12 +1206,13 @@
 
       state.isGenerating = true;
       const cleanLoading = startLoadingMessages();
-
       showLoadingState();
 
-      // Récupérer les paramètres
+      // Récupérer les paramètres utilisateur
       const userSpace = spaceInput.value.trim();
       const basePrompt = buildEnhancedPrompt();
+
+      // Construire la liste des Spaces à essayer (user + fallbacks)
       const spacesToTry = userSpace
         ? [userSpace, ...CONFIG.DEFAULT_SPACES.filter(s => s !== userSpace)]
         : CONFIG.DEFAULT_SPACES;
@@ -1268,9 +1222,8 @@
       for (let i = 0; i < spacesToTry.length; i++) {
         const spaceId = spacesToTry[i];
 
+        // Message de fallback si on change de Space
         if (i > 0) {
-          // Message de fallback
-          const fallbackMsg = document.createElement('div');
           loadingMessage.textContent = `🔄 Fallback vers ${spaceId.split('/')[1]}...`;
           loadingSub.textContent = 'Le serveur précédent était indisponible';
           await new Promise(r => setTimeout(r, 1500));
@@ -1285,11 +1238,11 @@
           cleanLoading();
           state.isGenerating = false;
 
-          // S'assurer que l'URL est absolue
+          // Résoudre l'URL si relative
           let finalUrl = imageUrl;
           if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-            // URL relative → compléter
-            finalUrl = `https://${spaceId.split('/')[0]}.hf.space/${imageUrl.replace(/^\//, '')}`;
+            const parts = spaceId.split('/');
+            finalUrl = `https://${parts[0]}.hf.space/${imageUrl.replace(/^\//, '')}`;
           }
 
           showSuccessState(finalUrl);
@@ -1300,87 +1253,75 @@
           lastError = error;
           console.warn(`Space ${spaceId} failed:`, error.message);
 
-          // Déterminer le type d'erreur pour le message
-          let errorType = 'generic';
+          // Analyser le type d'erreur pour un message pertinent
           const msg = error.message?.toLowerCase() || '';
+          let errorType = 'generic';
+          if (msg.includes('timeout') || msg.includes('abort')) errorType = 'timeout';
+          else if (msg.includes('sleep') || msg.includes('pause') || msg.includes('loading') || msg.includes('space is')) errorType = 'sleeping';
+          else if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('too many')) errorType = 'quota';
+          else if (msg.includes('404') || msg.includes('not found') || msg.includes('endpoint')) errorType = 'endpoint';
 
-          if (msg.includes('timeout') || msg.includes('abort')) {
-            errorType = 'timeout';
-          } else if (msg.includes('sleep') || msg.includes('pause') || msg.includes('loading') || msg.includes('space is')) {
-            errorType = 'sleeping';
-          } else if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('too many')) {
-            errorType = 'quota';
-          } else if (msg.includes('404') || msg.includes('not found') || msg.includes('endpoint')) {
-            errorType = 'endpoint';
-          }
-
-          // Si c'est le dernier Space, afficher l'erreur finale
+          // Dernier Space → afficher l'erreur finale
           if (i === spacesToTry.length - 1) {
             cleanLoading();
             state.isGenerating = false;
 
-            const errorMessages = {
+            const errors = {
               timeout: {
                 title: '⏱ Délai dépassé',
-                message: 'Le serveur met trop de temps à répondre (90s). Les Spaces gratuits sont parfois lents. Réessayez dans quelques instants ou utilisez un autre Space ID.'
+                message: 'Le serveur met trop de temps à répondre (90s max). Les Spaces gratuits sont parfois lents. Réessayez dans quelques instants ou changez de Space ID.'
               },
               sleeping: {
                 title: '💤 Space en veille',
-                message: "Ce modèle IA est en pause ou en veille. Essayez de l'ouvrir sur huggingface.co pour le réactiver, ou utilisez un autre Space ID."
+                message: "Ce modèle IA est en pause. Ouvrez-le sur huggingface.co pour le réactiver, ou utilisez un autre Space ID dans la configuration."
               },
               quota: {
                 title: '🔌 Serveur saturé',
-                message: 'Le serveur gratuit est très sollicité. Réessayez un peu plus tard ou configurez un autre Space ID.'
+                message: 'Le serveur gratuit est très sollicité. Réessayez plus tard ou configurez un autre Space ID.'
               },
-              'endpoint': {
+              endpoint: {
                 title: '⚙️ API incompatible',
-                message: "Ce Space n'a pas d'endpoint compatible avec notre appel. Vous pouvez essayer un autre Space ID dans la configuration."
+                message: "Ce Space n'a pas d'endpoint compatible. Essayez un autre Space ID dans la configuration."
               },
               generic: {
-                title: '❌ Erreur de génération',
-                message: `Impossible de générer le rendu. Dernière erreur : ${error.message || 'Erreur inconnue'}. Vérifiez que le Space ID est correct et que le Space est "Running" sur Hugging Face.`
+                title: '❌ Échec de génération',
+                message: `Impossible de générer le rendu. Erreur : ${error.message || 'inconnue'}. Vérifiez que le Space ID est correct et que le Space est "Running".`
               }
             };
-
-            const err = errorMessages[errorType] || errorMessages.generic;
+            const err = errors[errorType] || errors.generic;
             showErrorState(err.title, err.message);
             showToast(err.title, 'error', 6000);
             return;
           }
 
-          // Sinon, continuer avec le Space suivant
+          // Space suivant (fallback)
           continue;
         }
       }
 
-      // Ne devrait jamais arriver, mais sécurité
+      // Sécurité : ne devrait jamais arriver
       cleanLoading();
       state.isGenerating = false;
       resetToEmpty();
     }
 
-    // ─── Événements boutons ─────────────────────────────────────────────
+    // ─── Événements des boutons ─────────────────────────────────────────
     generateBtn.addEventListener('click', handleGenerate);
 
     errorRetryBtn.addEventListener('click', () => {
-      // Cacher l'erreur, remettre l'état vide, puis re-générer
       resultError.classList.add('hidden');
       resetToEmpty();
       handleGenerate();
     });
 
-    retryBtn.addEventListener('click', () => {
-      // Re-générer avec les mêmes paramètres
-      handleGenerate();
-    });
+    retryBtn.addEventListener('click', handleGenerate);
 
-    // ─── Téléchargement ──────────────────────────────────────────────────
+    // ─── Téléchargement HD avec fallback CORS ───────────────────────────
     downloadBtn.addEventListener('click', async () => {
       const url = state.currentResultUrl;
       if (!url) return;
 
       try {
-        // Tentative principale : fetch → blob
         const response = await fetch(url);
         if (!response.ok) throw new Error('HTTP ' + response.status);
 
@@ -1393,47 +1334,44 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(blobUrl);
-
         showToast('✅ Téléchargement réussi', 'success', 3000);
 
-      } catch (err) {
-        // Repli CORS : ouvrir dans un nouvel onglet
-        showToast("Le téléchargement direct n'est pas disponible (CORS). Ouverture dans un nouvel onglet → clic droit → Enregistrer l'image", 'info', 6000);
+      } catch {
+        // Fallback CORS : ouvrir dans un nouvel onglet
+        showToast(
+          "Téléchargement direct indisponible (CORS). L'image s'ouvre dans un nouvel onglet → clic droit → Enregistrer l'image",
+          'info', 6000
+        );
         window.open(url, '_blank');
       }
     });
 
-    // ─── Espace Help Modal ──────────────────────────────────────────────
+    // ─── Aide Space ID (toggle) ─────────────────────────────────────────
     let helpVisible = false;
     const spaceHelpBtn = $('#spaceHelpBtn');
     const spaceHint = $('#spaceHint');
 
     spaceHelpBtn.addEventListener('click', () => {
       helpVisible = !helpVisible;
-      if (helpVisible) {
-        spaceHint.innerHTML = `
-          <strong class="text-slate-500">💡 Qu'est-ce qu'un Space ID ?</strong><br>
-          Les Spaces Hugging Face sont des applications IA gratuites hébergées dans le cloud.<br><br>
-          Chaque Space a un ID unique au format <code class="text-indigo-400/80">utilisateur/nom-du-space</code>.<br><br>
-          <strong class="text-slate-500">Exemples :</strong><br>
-          • <code class="text-indigo-400/80">stabilityai/stable-diffusion-3.5-large</code><br>
-          • <code class="text-indigo-400/80">black-forest-labs/FLUX.1-schnell</code><br><br>
-          <strong class="text-amber-400/80">⚠️ Important :</strong> Le Space doit être en statut "Running" sur huggingface.co/spaces. Les Spaces gratuits se mettent en veille après inactivité.<br><br>
-          Laissez vide pour utiliser nos Spaces par défaut (avec fallback automatique).
-        `;
-      } else {
-        spaceHint.textContent = "Laissez vide pour utiliser le Space par défaut. Vous pouvez utiliser n'importe quel Space Gradio public compatible avec la génération d'images.";
-      }
+      spaceHint.innerHTML = helpVisible
+        ? `<strong class="text-slate-500">💡 Qu'est-ce qu'un Space ID ?</strong><br>
+           Les Spaces Hugging Face sont des applications IA gratuites hébergées dans le cloud.<br><br>
+           Chaque Space a un ID unique : <code class="text-indigo-400/80">utilisateur/nom</code>.<br><br>
+           <strong class="text-slate-500">Exemples :</strong><br>
+           • <code class="text-indigo-400/80">stabilityai/stable-diffusion-3.5-large</code><br>
+           • <code class="text-indigo-400/80">black-forest-labs/FLUX.1-schnell</code><br><br>
+           ⚠️ Le Space doit être en statut "Running" sur huggingface.co.<br>
+           Laissez vide pour utiliser les Spaces par défaut (fallback auto).`
+        : 'Laissez vide pour utiliser le Space par défaut. Vous pouvez utiliser n\'importe quel Space Gradio public compatible avec la génération d\'images.';
     });
 
-    // ─── Changements de paramètres ──────────────────────────────────────
-    // Réactiver le bouton quand on modifie des paramètres avec une image déjà chargée
+    // ─── Changements paramètres → réactiver bouton ──────────────────────
     [projectType, styleSelect, promptInput, spaceInput].forEach(el => {
       el.addEventListener('change', updateGenerateButton);
       el.addEventListener('input', updateGenerateButton);
     });
 
-    // ─── Langue (FR/AR) ──────────────────────────────────────────────────
+    // ─── Internationalisation FR / AR ────────────────────────────────────
     const translations = {
       fr: {
         uploadLabel: 'Plan 2D',
@@ -1444,12 +1382,12 @@
         spaceLabel: 'Hugging Face Space ID',
         spaceHelp: "Qu'est-ce que c'est ?",
         resultLabel: 'Rendu 3D',
-        resultEmptyText: 'En attente d\'une génération',
+        resultEmptyText: "En attente d'une génération",
         resultEmptyHint: 'Téléversez un plan et cliquez sur Générer',
         downloadText: 'Télécharger HD',
         retryText: 'Re-générer',
         generateText: '✨ Générer le rendu 3D',
-        tagline: 'Téléversez votre plan 2D, choisissez un style, laissez l\'IA générer une perspective 3D photoréaliste',
+        tagline: "Téléversez votre plan 2D, choisissez un style, laissez l'IA générer une perspective 3D photoréaliste",
         fallbackInfo: '2 Spaces de secours configurés automatiquement en cas d\'indisponibilité',
         errorRetryText: 'Réessayer',
       },
@@ -1476,11 +1414,10 @@
     function setLanguage(lang) {
       state.lang = lang;
       langLabel.textContent = lang.toUpperCase();
-
       const t = translations[lang];
       if (!t) return;
 
-      const elements = {
+      const map = {
         '#uploadLabel': t.uploadLabel,
         '#configLabel': t.configLabel,
         '#typeLabel': t.typeLabel,
@@ -1499,16 +1436,13 @@
         '#errorRetryText': t.errorRetryText,
       };
 
-      Object.entries(elements).forEach(([sel, text]) => {
+      Object.entries(map).forEach(([sel, text]) => {
         const el = document.querySelector(sel);
         if (el) el.textContent = text;
       });
 
-      // Direction RTL
       document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
       document.documentElement.lang = lang;
-
-      // Font family
       document.body.style.fontFamily = lang === 'ar'
         ? "'Tajawal', 'Inter', system-ui, sans-serif"
         : "'Inter', system-ui, sans-serif";
@@ -1520,17 +1454,16 @@
       setLanguage(state.lang === 'fr' ? 'ar' : 'fr');
     });
 
-    // ─── Initialisation ─────────────────────────────────────────────────
+    // ─── Initialisation au chargement ───────────────────────────────────
     (function init() {
-      // Restaurer la langue
+      // Restaurer les préférences utilisateur
       const savedLang = localStorage.getItem('dzarchi-lang') || 'fr';
       setLanguage(savedLang);
 
-      // Restaurer le Space ID si saisi
       const savedSpace = localStorage.getItem('dzarchi-space');
       if (savedSpace) spaceInput.value = savedSpace;
 
-      // Sauvegarder le Space ID
+      // Sauvegarder le Space ID à chaque changement
       spaceInput.addEventListener('change', () => {
         localStorage.setItem('dzarchi-space', spaceInput.value);
       });
@@ -1538,7 +1471,7 @@
       // État initial du bouton
       updateGenerateButton();
 
-      // Petite animation d'entrée pour les éléments
+      // Animation d'entrée progressive des cartes
       document.querySelectorAll('.glass').forEach((el, i) => {
         el.style.opacity = '0';
         el.style.transform = 'translateY(15px)';
@@ -1550,9 +1483,7 @@
       });
 
       // Icônes Lucide
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-      }
+      if (typeof lucide !== 'undefined') lucide.createIcons();
 
       console.log('%c🏗️ DzArchi AI — Architecture Intelligence', 'font-size:20px; font-weight:bold; color:#6366f1');
       console.log('%cConstruit par JARVIS pour Ilyes — juillet 2026', 'font-size:12px; color:#94a3b8');
