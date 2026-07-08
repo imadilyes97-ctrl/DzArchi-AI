@@ -1198,65 +1198,229 @@
       }
     }
 
-    // ─── Appel REST direct à l'API Gradio ────────────────────────────────
-    // Alternative au client Gradio officiel — plus robuste pour certains Spaces
+    // ─── Appel REST direct à l'API Gradio (multi-format) ──────────────
+    // Gère Gradio 3.x (/api/predict/) ET Gradio 4.x (/gradio_api/call/)
     async function tryDirectRest(spaceId, imageFile, prompt) {
-      const [username, spaceName] = spaceId.split('/');
-      const domain = `${username}-${spaceName}.hf.space`.toLowerCase();
-      const baseUrl = `https://${domain}`;
-
-      // Convertir l'image en base64 pour l'API REST
       const imageBase64 = await fileToBase64(imageFile);
 
-      // Endpoints REST Gradio à essayer
-      const restEndpoints = [
-        { fn: '/api/predict/', params: { data: [prompt, imageBase64] } },
-        { fn: '/api/predict/', params: { data: [imageBase64, prompt] } },
-        { fn: '/api/predict/', params: { data: [imageBase64, prompt, ''] } },
-        { fn: '/api/predict/', params: { data: [prompt] } },
-        { fn: '/api/v1/predict/', params: { prompt, image: imageBase64 } },
+      // Générer les domaines possibles (certains Spaces convertissent les . en -)
+      const [username, spaceName] = spaceId.split('/');
+      const baseName = `${username}-${spaceName}`.toLowerCase();
+      const domains = [
+        `${baseName.replace(/\./g, '-')}.hf.space`,   // stabilité → stabilityai-stable-diffusion-35-large.hf.space
+        `${baseName}.hf.space`,                          // stabilité → stabilityai-stable-diffusion-3.5-large.hf.space
       ];
+      // Supprimer les doublons si les deux sont identiques
+      const uniqueDomains = [...new Set(domains)];
 
       let lastError = null;
 
-      for (const ep of restEndpoints) {
-        try {
-          const response = await fetch(`${baseUrl}${ep.fn}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(ep.params),
-            signal: state.abortController?.signal,
-          });
+      for (const domain of uniqueDomains) {
+        const baseUrl = `https://${domain}`;
 
-          if (!response.ok) {
-            lastError = new Error(`HTTP ${response.status}`);
+        // Étape 1 : Découverte via /config
+        try {
+          const config = await fetchApiConfig(baseUrl);
+          if (config) {
+            const result = await callFromConfig(config, baseUrl, prompt, imageBase64);
+            if (result) return result;
+          }
+        } catch { /* continuer */ }
+
+        // Étape 2 : Essayer les endpoints Gradio 3.x et 4.x en ordre
+        const endpoints = [
+          // Gradio 3.x
+          { fn: '/api/predict/', fn2: null,     body: { data: [imageBase64, prompt] } },
+          { fn: '/api/predict/', fn2: null,     body: { data: [prompt, imageBase64] } },
+          { fn: '/api/predict/', fn2: null,     body: { data: [imageBase64, prompt, ''] } },
+          // Gradio 4.x (endpoint /run)
+          { fn: null,            fn2: '/run',   body: { data: [imageBase64, prompt] } },
+          { fn: null,            fn2: '/run',   body: { data: [prompt, imageBase64] } },
+          { fn: null,            fn2: '/predict', body: { data: [imageBase64, prompt] } },
+          // Gradio 4.x avec /call/
+          { fn: null,            fn2: '/call/run', body: { data: [imageBase64, prompt] }, streaming: true },
+          { fn: null,            fn2: '/call/predict', body: { data: [imageBase64, prompt] }, streaming: true },
+        ];
+
+        for (const ep of endpoints) {
+          try {
+            const url = ep.fn
+              ? `${baseUrl}${ep.fn}`
+              : `${baseUrl}/gradio_api${ep.fn2}`;
+
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(ep.body),
+              signal: state.abortController?.signal,
+            });
+
+            if (!response.ok) {
+              lastError = new Error(`HTTP ${response.status}`);
+              continue;
+            }
+
+            // Gradio 4.x streaming → d'abord obtenir l'event_id
+            if (ep.streaming) {
+              const { event_id } = await response.json();
+              if (!event_id) continue;
+
+              // Attendre le résultat (polling)
+              for (let attempt = 0; attempt < 30; attempt++) {
+                await new Promise(r => setTimeout(r, 1000));
+                const dataUrl = `${url.replace('/call/', '/data/')}/${event_id}`;
+                try {
+                  const dataResp = await fetch(dataUrl, {
+                    signal: state.abortController?.signal,
+                  });
+                  if (dataResp.ok) {
+                    const data = await dataResp.json();
+                    const img = extractImageFromGradioData(data);
+                    if (img) return resolveRelativeUrl(img, baseUrl);
+                  }
+                } catch {}
+              }
+              continue;
+            }
+
+            // Gradio 3.x / 4.x normal
+            const result = await response.json();
+            const imageUrl = extractImageFromGradioData(result);
+            if (imageUrl) {
+              return resolveRelativeUrl(imageUrl, baseUrl);
+            }
+          } catch (e) {
+            lastError = e;
             continue;
           }
-
-          const result = await response.json();
-          const imageUrl = extractImageFromGradioRest(result);
-          if (imageUrl) {
-            // Construire l'URL absolue
-            return imageUrl.startsWith('http') ? imageUrl : `${baseUrl}/file=${imageUrl}`;
-          }
-        } catch (e) {
-          lastError = e;
-          continue;
         }
       }
 
-      throw new Error(lastError?.message || 'Aucun endpoint REST disponible');
+      throw new Error(lastError?.message || 'Aucun endpoint disponible');
     }
 
-    // ─── Extraction d'image depuis réponse Gradio ───────────────────────
-    function extractImageFromResponse(data) {
+    // ─── Découvrir la config d'un Space Gradio ────────────────────────
+    async function fetchApiConfig(baseUrl) {
+      try {
+        const resp = await fetch(`${baseUrl}/config`, {
+          signal: state.abortController?.signal,
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch { return null; }
+    }
+
+    // ─── Appeler l'API à partir de la config découverte ────────────────
+    async function callFromConfig(config, baseUrl, prompt, imageBase64) {
+      if (!config?.dependencies) return null;
+
+      // Trouver le premier composant qui ressemble à un bouton de génération
+      const components = config.dependencies || [];
+      const fnNames = Object.keys(config.dependencies).filter(k => {
+        const dep = config.dependencies[k];
+        return dep?.fn && dep.fn.length > 0;
+      });
+
+      if (fnNames.length === 0) return null;
+
+      // Essayer chaque fonction
+      for (const fnName of fnNames) {
+        try {
+          // Gradio 4.x
+          const resp = await fetch(`${baseUrl}/gradio_api/call/${fnName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [imageBase64, prompt] }),
+            signal: state.abortController?.signal,
+          });
+          if (!resp.ok) continue;
+
+          const { event_id } = await resp.json();
+          if (!event_id) continue;
+
+          // Poll pour le résultat
+          for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const dataResp = await fetch(`${baseUrl}/gradio_api/data/${fnName}/${event_id}`, {
+              signal: state.abortController?.signal,
+            });
+            if (dataResp.ok) {
+              const data = await dataResp.json();
+              const img = extractImageFromGradioData(data);
+              if (img) return resolveRelativeUrl(img, baseUrl);
+            }
+          }
+        } catch {}
+      }
+      return null;
+    }
+
+    // ─── Extraction d'image depuis réponse Gradio (tous formats) ──────
+    function extractImageFromGradioData(data) {
       if (!data) return null;
 
-      if (typeof data === 'string') {
-        if (data.startsWith('http') || data.startsWith('data:')) return data;
-        return null;
+      // Format Gradio 4.x events: [{data: [...]}, ...]
+      if (Array.isArray(data) && data[0]?.data) {
+        return extractImageFromArray(data[0].data);
       }
 
+      // Format Gradio 3.x: { data: [...] }
+      if (data.data) {
+        return extractImageFromArray(data.data);
+      }
+
+      // Format Gradio events array
+      if (Array.isArray(data) && typeof data[0] === 'string') {
+        return extractImageFromArray(data);
+      }
+
+      // Objet direct
+      if (data.url) return data.url;
+      if (data.path) return `file=${data.path}`;
+      if (typeof data === 'string' && (data.startsWith('http') || data.startsWith('data:'))) return data;
+
+      return null;
+    }
+
+    function extractImageFromArray(arr) {
+      if (!Array.isArray(arr)) return extractSingleItem(arr);
+      for (const item of arr) {
+        const result = extractSingleItem(item);
+        if (result) return result;
+      }
+      return null;
+    }
+
+    function extractSingleItem(item) {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        if (item.startsWith('http')) return item;
+        if (item.startsWith('data:')) return item;
+        if (item.startsWith('/file=') || item.startsWith('file=')) return item.replace(/^\/?file=/, '');
+        if (item.includes(',') && item.length > 100) return item; // base64
+        return null;
+      }
+      if (item.url) return item.url;
+      if (item.path) return `file=${item.path}`;
+      if (item.image?.url) return item.image.url;
+      if (item.name && item.data) {
+        try { return URL.createObjectURL(new Blob([item.data])); } catch { return null; }
+      }
+      return null;
+    }
+
+    function resolveRelativeUrl(imageUrl, baseUrl) {
+      if (!imageUrl) return null;
+      if (imageUrl.startsWith('http') || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return imageUrl;
+      if (imageUrl.startsWith('file=')) return `${baseUrl}/${imageUrl}`;
+      if (imageUrl.startsWith('/')) return `${baseUrl}${imageUrl}`;
+      return `${baseUrl}/${imageUrl}`;
+    }
+
+    // ─── Extraction d'image depuis réponse Gradio (ancienne, pour le client SDK) ───
+    function extractImageFromResponse(data) {
+      if (!data) return null;
+      if (typeof data === 'string' && (data.startsWith('http') || data.startsWith('data:'))) return data;
       if (Array.isArray(data)) {
         for (const item of data) {
           const url = extractImageFromResponse(item);
@@ -1264,37 +1428,12 @@
         }
         return null;
       }
-
       if (data?.url) return data.url;
       if (data?.image?.url) return data.image.url;
       if (data?.image && typeof data.image === 'string') return data.image;
-      if (data?.path) return data.path;
-      if (data?.name && data?.data) {
-        // Blob-like object
-        try { return URL.createObjectURL(new Blob([data.data])); } catch {}
-      }
-
+      if (data?.path) return `file=${data.path}`;
       return null;
     }
-
-    function extractImageFromGradioRest(result) {
-      if (!result) return null;
-      // Gradio REST API renvoie { data: [...] }
-      const data = result.data;
-      if (!data) return null;
-
-      for (const item of data) {
-        if (typeof item === 'string') {
-          if (item.startsWith('http') || item.startsWith('/file=') || item.startsWith('file=')) {
-            return item.replace(/^\/?file=/, '');
-          }
-          // Maybe it's base64
-          if (item.length > 100 && item.includes(',')) return item;
-        }
-        if (item?.url) return item.url;
-        if (item?.path) return item.path;
-      }
-      return null;
     }
 
     function fileToBase64(file) {
