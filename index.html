@@ -1193,101 +1193,128 @@
       });
     }
 
-    // ─── Appel Space Gradio 4.x SSE (FLUX.1-schnell ou custom) ────────────
-    // Format vérifié avec FLUX.1-schnell:
-    //   POST /gradio_api/call/infer  → {"data": [prompt, seed, randomize, width, height, steps]}
-    //   GET  /gradio_api/call/infer/{event_id} → SSE: event: complete / data: [{"url":"..."}, seed]
+    // ─── Appel Space Gradio 4.x SSE (FLUX.1-schnell ou custom) ───────────
     async function callGradioSpace(spaceId, prompt) {
       const [user, sName] = spaceId.split('/');
-      const domain = `${user}-${sName.replace(/\./g, '-')}`.toLowerCase();
-      const BASE = `https://${domain}.hf.space`;
-
-      console.log(`📡 ${spaceId} → POST /gradio_api/call/infer`);
-
-      const resp = await fetch(`${BASE}/gradio_api/call/infer`, {
+      const domain = user + '-' + sName.replace(/\./g, '-');
+      const BASE = 'https://' + domain.toLowerCase() + '.hf.space';
+      console.log('📡 ' + spaceId + ' → POST /gradio_api/call/infer');
+      const resp = await fetch(BASE + '/gradio_api/call/infer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          data: [prompt, 0, true, 1024, 1024, 4]
-        }),
+        body: JSON.stringify({ data: [prompt, 0, true, 1024, 1024, 4] }),
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-      const { event_id } = await resp.json();
-      if (!event_id) throw new Error("Pas d'event_id");
-      console.log(`  event_id: ${event_id}`);
-
-      for (let i = 0; i < 60; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        loadingSub.textContent = `⏳ Génération... ${(i+1)*2}s`;
-        loadingProgress.style.width = `${15 + Math.min(i * 3, 70)}%`;
-
-        try {
-          const sse = await fetch(`${BASE}/gradio_api/call/infer/${event_id}`);
-          if (!sse.ok) continue;
-          const text = await sse.text();
-          const dataMatch = text.match(/data:\s*(.+)/);
-          if (!dataMatch) continue;
-          const parsed = JSON.parse(dataMatch[1]);
-          if (Array.isArray(parsed) && parsed[0]?.url) {
-            console.log(`✅ ${spaceId} → image: ${parsed[0].url}`);
-            return parsed[0].url;
+      if (resp.status === 503) {
+        loadingSub.textContent = '\u23f3 R\u00e9veil du Space...';
+        for (let r = 0; r < 6; r++) {
+          await new Promise(s => setTimeout(s, 10000));
+          loadingSub.textContent = '\u23f3 R\u00e9veil... ' + ((r+1)*10) + 's';
+          const retry = await fetch(BASE + '/gradio_api/call/infer', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: [prompt, 0, true, 1024, 1024, 4] }),
+          });
+          if (retry.ok) {
+            const { event_id } = await retry.json();
+            if (event_id) return await pollSSE(event_id, BASE, spaceId);
           }
-        } catch {}
+          if (retry.status !== 503 && retry.status !== 500) break;
+        }
+        throw new Error('Cold start timeout');
       }
-      throw new Error('Timeout génération');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const { event_id } = await resp.json();
+      if (!event_id) throw new Error("missing event_id");
+      return await pollSSE(event_id, BASE, spaceId);
     }
 
-    // ─── Point d'entrée de la génération ────────────────────────────────
+    async function pollSSE(event_id, BASE, spaceId) {
+      for (let i = 0; i < 45; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        loadingSub.textContent = '\u23f3 G\u00e9n\u00e9ration... ' + ((i+1)*2) + 's';
+        loadingProgress.style.width = 15 + Math.min(i * 3, 70) + '%';
+        try {
+          const sse = await fetch(BASE + '/gradio_api/call/infer/' + event_id);
+          if (!sse.ok) continue;
+          const text = await sse.text();
+          const dm = text.match(/data:\s*(.+)/);
+          if (!dm) continue;
+          const p = JSON.parse(dm[1]);
+          if (Array.isArray(p) && p[0]?.url) {
+            console.log('\u2705 ' + spaceId + ' \u2192 ' + p[0].url);
+            return p[0].url;
+          }
+        } catch (e) { console.warn('SSE poll:', e.message); }
+      }
+      throw new Error('Timeout 90s');
+    }
+
+    async function callProxy(proxyUrl, modelId, prompt, imageBase64, token) {
+      console.log('📡 Proxy ' + proxyUrl + ' → ' + modelId);
+      const body = { modelId, prompt, token };
+      if (imageBase64) body.image = imageBase64;
+      const resp = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (resp.ok && resp.headers.get('content-type')?.includes('image')) return URL.createObjectURL(await resp.blob());
+      const t = await resp.text().catch(() => '');
+      if (resp.status === 401 || resp.status === 403) throw new Error('AUTH_ERROR');
+      throw new Error('Proxy ' + resp.status + ': ' + t.slice(0, 150));
+    }
+
+    // ─── Point d'entrée de la génération ────────────────────────────────────────
     async function handleGenerate() {
       if (!state.currentFile || state.isGenerating) return;
+      try {
+        state.isGenerating = true;
+        const cleanLoading = startLoadingMessages();
+        showLoadingState();
+        const userSpace = spaceInput.value.trim();
+        const basePrompt = buildEnhancedPrompt();
+        const hfToken = hfTokenInput.value.trim() || null;
+        console.log('\U0001f680 DzArchi AI');
+        console.log('  Space:', userSpace || '(FLUX)');
 
-      state.isGenerating = true;
-      const cleanLoading = startLoadingMessages();
-      showLoadingState();
-
-      const userSpace = spaceInput.value.trim();
-      const basePrompt = buildEnhancedPrompt();
-
-      console.log('🚀 DzArchi AI Generation');
-      console.log('  Prompt:', basePrompt.slice(0, 80) + '...');
-      console.log('  Image:', state.currentFile?.name, `(${(state.currentFile?.size / 1024).toFixed(1)} Ko)`);
-
-      const spacesToTry = [];
-      if (userSpace) spacesToTry.push(userSpace);
-      spacesToTry.push('black-forest-labs/FLUX.1-schnell');
-
-      let lastError = null;
-
-      for (const spaceId of spacesToTry) {
-        loadingMessage.textContent = `🎨 ${spaceId.split('/')[1]}`;
-        loadingSub.textContent = 'Préparation du rendu architectural...';
-        console.log(`📡 Trying ${spaceId}...`);
-
-        try {
-          const imageUrl = await callGradioSpace(spaceId, basePrompt);
-          cleanLoading(); state.isGenerating = false;
-          showSuccessState(imageUrl);
-          showToast('🎉 Rendu 3D généré !', 'success', 5000);
-          return;
-        } catch (e) {
-          lastError = e;
-          console.warn(`⚠️ ${spaceId} failed:`, e.message);
-          if (spacesToTry.indexOf(spaceId) < spacesToTry.length - 1) {
-            loadingMessage.textContent = '🔄 Fallback...';
-            loadingSub.textContent = 'Essai du Space suivant';
+        // STRATEGIE A: Proxy (img2img) si URL http
+        if (userSpace && (userSpace.startsWith('http://') || userSpace.startsWith('https://'))) {
+          loadingMessage.textContent = '\U0001f517 Proxy';
+          loadingSub.textContent = 'img2img...';
+          try {
+            const imgB64 = await fileToBase64(state.currentFile).catch(() => null);
+            const img = await callProxy(userSpace, 'runwayml/stable-diffusion-v1-5', basePrompt, imgB64, hfToken);
+            cleanLoading(); state.isGenerating = false; showSuccessState(img);
+            showToast('\U0001f389 Rendu via proxy !', 'success', 5000); return;
+          } catch (e) {
+            if (e.message === 'AUTH_ERROR') {
+              cleanLoading(); state.isGenerating = false;
+              showErrorState('Erreur auth', 'Token invalide pour ce modele'); showToast('Auth error', 'error', 6000); return;
+            }
+            console.warn('Proxy failed:', e.message);
+            loadingMessage.textContent = 'Fallback FLUX...';
             await new Promise(r => setTimeout(r, 500));
           }
         }
-      }
 
-      cleanLoading(); state.isGenerating = false;
-      showErrorState(
-        'Espace IA indisponible',
-        'Le Space FLUX.1-schnell est peut-être en veille. Attendez 30s et réessayez, ou entrez un Space ID personnalisé.'
-      );
-      showToast('❌ ' + (lastError?.message || 'Erreur'), 'error', 6000);
-      console.error('❌ ALL FAILED');
+        // STRATEGIE B: FLUX txt2img
+        const spaces = [];
+        if (userSpace && !userSpace.startsWith('http')) spaces.push(userSpace);
+        spaces.push('black-forest-labs/FLUX.1-schnell');
+        let lastErr = null;
+        for (const sid of spaces) {
+          loadingMessage.textContent = '\U0001f3a8 ' + sid.split('/')[1];
+          try {
+            const img = await callGradioSpace(sid, basePrompt);
+            cleanLoading(); state.isGenerating = false; showSuccessState(img);
+            showToast('\U0001f389 Rendu 3D !', 'success', 5000); return;
+          } catch (e) { lastErr = e; console.warn('\u26a0\ufe0f ' + sid + ': ' + e.message); }
+        }
+
+        cleanLoading(); state.isGenerating = false;
+        showErrorState('Indisponible', (lastErr?.message || 'Err') + '. Deployez le CF Worker pour img2img.');
+        showToast('\u274c Erreur', 'error', 6000);
+      } catch (g) {
+        console.error('FATAL:', g);
+        state.isGenerating = false;
+        showErrorState('Erreur fatale', g.message || 'Voir console F12');
+        showToast('\u274c Fatal', 'error', 6000);
+      }
     }
 
     // ─── Événements des boutons ─────────────────────────────────────────
