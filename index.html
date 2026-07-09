@@ -812,9 +812,6 @@
        ================================================================ -->
 
   <script type="module">
-    // ─── Imports ─────────────────────────────────────────────────────────
-    import { Client } from 'https://cdn.jsdelivr.net/npm/@gradio/client/+esm';
-
     // ─── Configuration ───────────────────────────────────────────────────
     const CONFIG = {
       // Liste des Spaces par défaut
@@ -1110,276 +1107,6 @@
       generateText.textContent = '✨ Générer le rendu 3D';
     }
 
-    // ─── Génération via Gradio Client ───────────────────────────────────
-    async function tryGenerate(spaceInfo, imageFile, prompt, attempt = 0) {
-      const MAX_RETRIES = 1;  // 1 retry (moins de attentes vu le long timeout)
-      let timeoutId = null;
-
-      try {
-        state.abortController = new AbortController();
-        timeoutId = setTimeout(() => {
-          state.abortController?.abort();
-        }, CONFIG.TIMEOUT_MS);
-
-        // Convertir l'ID du Space en URL valide pour le Gradio client
-        const spaceId = spaceInfo.id;
-
-        // Connexion au Space Gradio (le client gère le réveil des Spaces ZeroGPU)
-        let client;
-        try {
-          client = await Client.connect(spaceId, {
-            signal: state.abortController.signal,
-          });
-        } catch (connError) {
-          // Si la connexion échoue, essayer en direct via REST API
-          console.warn('Gradio client connect failed, trying direct REST:', connError.message);
-          return tryDirectRest(spaceId, imageFile, prompt);
-        }
-
-        // Découverte dynamique de l'API
-        let endpoints = [];
-        try {
-          const apiInfo = await client.view_api();
-          if (apiInfo?.named_endpoints) {
-            endpoints = Object.entries(apiInfo.named_endpoints).map(([name, info]) => ({
-              fn: '/' + name.replace(/^\//, ''),
-              parameters: info?.parameters,
-              discovered: true,
-            }));
-          }
-          if (apiInfo?.unnamed_endpoints) {
-            Object.entries(apiInfo.unnamed_endpoints).forEach(([name, info]) => {
-              endpoints.push({
-                fn: '/' + name.replace(/^\//, ''),
-                parameters: info?.parameters,
-                discovered: true,
-              });
-            });
-          }
-        } catch {
-          // Fallback : endpoints communs aux Spaces SD / FLUX
-          endpoints = [
-            { fn: '/predict' },
-            { fn: '/run' },
-            { fn: '/generate_image' },
-            { fn: '/generate' },
-            { fn: '/api/predict' },
-            { fn: '/submit' },
-            // SD3 endpoints
-            { fn: '/sd3_generate' },
-            { fn: '/run_sd3' },
-          ];
-        }
-
-        const imageBlob = imageFile;
-        let result = null;
-        let lastError = null;
-
-        for (const ep of endpoints) {
-          try {
-            const params = buildGradioParams(ep, prompt, imageBlob);
-            result = await client.predict(ep.fn, params, {
-              signal: state.abortController.signal,
-            });
-            if (result?.data) break;
-          } catch (e) {
-            lastError = e;
-            continue;
-          }
-        }
-
-        clearTimeout(timeoutId);
-
-        if (!result?.data) {
-          // Si le client Gradio n'a rien donné, essayer en REST direct
-          return tryDirectRest(spaceId, imageFile, prompt);
-        }
-
-        // Extraction de l'image du résultat (multi-format)
-        const data = result.data;
-        // Priorité : extractImageFromResponse (handle FileData @gradio/client + Gradio 3.x)
-        // → extractImageFromGradioData (handle Gradio 4.x nested events)
-        let imageUrl = extractImageFromResponse(data) || extractImageFromGradioData(data);
-
-        if (!imageUrl) {
-          throw new Error("L'image n'a pas pu être extraite de la réponse. Le Space a répondu mais le format est inconnu.");
-        }
-
-        return imageUrl;
-
-      } catch (error) {
-        if (timeoutId) clearTimeout(timeoutId);
-
-        if (error.name === 'AbortError') {
-          throw new Error('timeout');
-        }
-
-        if (attempt < MAX_RETRIES) {
-          const delay = 3000;
-          await new Promise(r => setTimeout(r, delay));
-          return tryGenerate(spaceInfo, imageFile, prompt, attempt + 1);
-        }
-
-        throw error;
-      }
-    }
-
-    // ─── Appel REST direct à l'API Gradio (multi-format) ──────────────
-    // Gère Gradio 3.x (/api/predict/) ET Gradio 4.x (/gradio_api/call/)
-    async function tryDirectRest(spaceId, imageFile, prompt) {
-      const imageBase64 = await fileToBase64(imageFile);
-
-      // Générer les domaines possibles (certains Spaces convertissent les . en -)
-      const [username, spaceName] = spaceId.split('/');
-      const baseName = `${username}-${spaceName}`.toLowerCase();
-      const domains = [
-        `${baseName.replace(/\./g, '-')}.hf.space`,   // stabilité → stabilityai-stable-diffusion-35-large.hf.space
-        `${baseName}.hf.space`,                          // stabilité → stabilityai-stable-diffusion-3.5-large.hf.space
-      ];
-      // Supprimer les doublons si les deux sont identiques
-      const uniqueDomains = [...new Set(domains)];
-
-      let lastError = null;
-
-      for (const domain of uniqueDomains) {
-        const baseUrl = `https://${domain}`;
-
-        // Étape 1 : Découverte via /config
-        try {
-          const config = await fetchApiConfig(baseUrl);
-          if (config) {
-            const result = await callFromConfig(config, baseUrl, prompt, imageBase64);
-            if (result) return result;
-          }
-        } catch { /* continuer */ }
-
-        // Étape 2 : Essayer les endpoints Gradio 3.x et 4.x en ordre
-        const endpoints = [
-          // Gradio 3.x
-          { fn: '/api/predict/', fn2: null,     body: { data: [imageBase64, prompt] } },
-          { fn: '/api/predict/', fn2: null,     body: { data: [prompt, imageBase64] } },
-          { fn: '/api/predict/', fn2: null,     body: { data: [imageBase64, prompt, ''] } },
-          // Gradio 4.x (endpoint /run)
-          { fn: null,            fn2: '/run',   body: { data: [imageBase64, prompt] } },
-          { fn: null,            fn2: '/run',   body: { data: [prompt, imageBase64] } },
-          { fn: null,            fn2: '/predict', body: { data: [imageBase64, prompt] } },
-          // Gradio 4.x avec /call/
-          { fn: null,            fn2: '/call/run', body: { data: [imageBase64, prompt] }, streaming: true },
-          { fn: null,            fn2: '/call/predict', body: { data: [imageBase64, prompt] }, streaming: true },
-        ];
-
-        for (const ep of endpoints) {
-          try {
-            const url = ep.fn
-              ? `${baseUrl}${ep.fn}`
-              : `${baseUrl}/gradio_api${ep.fn2}`;
-
-            const response = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(ep.body),
-              signal: state.abortController?.signal,
-            });
-
-            if (!response.ok) {
-              lastError = new Error(`HTTP ${response.status}`);
-              continue;
-            }
-
-            // Gradio 4.x streaming → d'abord obtenir l'event_id
-            if (ep.streaming) {
-              const { event_id } = await response.json();
-              if (!event_id) continue;
-
-              // Attendre le résultat (polling)
-              for (let attempt = 0; attempt < 30; attempt++) {
-                await new Promise(r => setTimeout(r, 1000));
-                const dataUrl = `${url.replace('/call/', '/data/')}/${event_id}`;
-                try {
-                  const dataResp = await fetch(dataUrl, {
-                    signal: state.abortController?.signal,
-                  });
-                  if (dataResp.ok) {
-                    const data = await dataResp.json();
-                    const img = extractImageFromGradioData(data);
-                    if (img) return resolveRelativeUrl(img, baseUrl);
-                  }
-                } catch {}
-              }
-              continue;
-            }
-
-            // Gradio 3.x / 4.x normal
-            const result = await response.json();
-            const imageUrl = extractImageFromGradioData(result);
-            if (imageUrl) {
-              return resolveRelativeUrl(imageUrl, baseUrl);
-            }
-          } catch (e) {
-            lastError = e;
-            continue;
-          }
-        }
-      }
-
-      throw new Error(lastError?.message || 'Aucun endpoint disponible');
-    }
-
-    // ─── Découvrir la config d'un Space Gradio ────────────────────────
-    async function fetchApiConfig(baseUrl) {
-      try {
-        const resp = await fetch(`${baseUrl}/config`, {
-          signal: state.abortController?.signal,
-        });
-        if (!resp.ok) return null;
-        return await resp.json();
-      } catch { return null; }
-    }
-
-    // ─── Appeler l'API à partir de la config découverte ────────────────
-    async function callFromConfig(config, baseUrl, prompt, imageBase64) {
-      if (!config?.dependencies) return null;
-
-      // Trouver le premier composant qui ressemble à un bouton de génération
-      const components = config.dependencies || [];
-      const fnNames = Object.keys(config.dependencies).filter(k => {
-        const dep = config.dependencies[k];
-        return dep?.fn && dep.fn.length > 0;
-      });
-
-      if (fnNames.length === 0) return null;
-
-      // Essayer chaque fonction
-      for (const fnName of fnNames) {
-        try {
-          // Gradio 4.x
-          const resp = await fetch(`${baseUrl}/gradio_api/call/${fnName}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: [imageBase64, prompt] }),
-            signal: state.abortController?.signal,
-          });
-          if (!resp.ok) continue;
-
-          const { event_id } = await resp.json();
-          if (!event_id) continue;
-
-          // Poll pour le résultat
-          for (let i = 0; i < 30; i++) {
-            await new Promise(r => setTimeout(r, 1000));
-            const dataResp = await fetch(`${baseUrl}/gradio_api/data/${fnName}/${event_id}`, {
-              signal: state.abortController?.signal,
-            });
-            if (dataResp.ok) {
-              const data = await dataResp.json();
-              const img = extractImageFromGradioData(data);
-              if (img) return resolveRelativeUrl(img, baseUrl);
-            }
-          }
-        } catch {}
-      }
-      return null;
-    }
 
     // ─── Extraction d'image depuis réponse Gradio (tous formats) ──────
     function extractImageFromGradioData(data) {
@@ -1438,14 +1165,6 @@
       return null;
     }
 
-    function resolveRelativeUrl(imageUrl, baseUrl) {
-      if (!imageUrl) return null;
-      if (imageUrl.startsWith('http') || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return imageUrl;
-      if (imageUrl.startsWith('file=')) return `${baseUrl}/${imageUrl}`;
-      if (imageUrl.startsWith('/')) return `${baseUrl}${imageUrl}`;
-      return `${baseUrl}/${imageUrl}`;
-    }
-
     // ─── Extraction d'image depuis réponse Gradio (ancienne, pour le client SDK) ───
     function extractImageFromResponse(data) {
       if (!data) return null;
@@ -1475,42 +1194,21 @@
     }
 
     /** Construit les paramètres adaptés à l'endpoint Gradio */
-    function buildGradioParams(endpoint, prompt, imageBlob) {
-      if (endpoint.discovered && endpoint.parameters) {
-        const params = {};
-        endpoint.parameters.forEach((p, i) => {
-          const name = p.label || p.parameter_name || `param_${i}`;
-          const lower = name.toLowerCase();
-          if (lower.includes('prompt') || lower.includes('text') || lower.includes('caption')) {
-            params[name] = prompt;
-          } else if (lower.includes('image') || lower.includes('img') || lower.includes('file') || lower.includes('upload')) {
-            params[name] = imageBlob;
-          } else if (i === 0) {
-            params[name] = imageBlob; // Première param = souvent image
-          } else if (i === 1) {
-            params[name] = prompt;
-          } else {
-            params[name] = '';
-          }
-        });
-        return params;
-      }
-      // Fallback : image en premier, prompt en second (ordre Gradio standard)
-      // NOTE: Array simple pour @gradio/client predict(), PAS {data: [...]} (format REST)
-      return [imageBlob, prompt];
-    }
 
-    // ─── Appel API Inference Hugging Face (avec token) ────────────────
-    // Beaucoup plus fiable que les Spaces Gradio directs car l'API HF
-    // gère le cold start automatiquement et ne s'endort pas.
-    async function callHFInference(inferenceModels, prompt, imageBase64, token) {
+    // ─── API Inference Hugging Face (PRINCIPALE) ──────────────────────────
+    // Fonctionne AVEC ou SANS token.
+    // - Les IDs (stabilityai/stable-diffusion-2-1, runwayml/stable-diffusion-v1-5...)
+    //   sont des MODELES du Hub, PAS des Spaces Gradio.
+    // - Le bon endpoint : api-inference.huggingface.co/models/{id}
+    // - PAS de sous-domaine .hf.space — ça c'est pour les Spaces avec UI Gradio.
+    // - Sans token : rate limit bas (~30 req/min IP) mais fonctionnel
+    // - Avec token : rate limit élevé + accès modèles gated
+    async function callHFInference(models, prompt, imageBase64, token) {
       const imgRaw = imageBase64?.split(',')[1] || imageBase64;
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      for (const model of inferenceModels) {
+      for (const model of models) {
         try {
           loadingMessage.textContent = `🤗 ${model.name}`;
           loadingSub.textContent = model.type === 'txt2img'
@@ -1522,66 +1220,121 @@
             ? { inputs: prompt }
             : { inputs: prompt, image: imgRaw };
 
+          console.log(`📡 HF API ${model.id} (${model.type})...`);
           const resp = await fetch(`https://api-inference.huggingface.co/models/${model.id}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
+            method: 'POST', headers, body: JSON.stringify(body),
           });
 
-          // 200 = image directe
+          // ✅ 200 avec image
           if (resp.status === 200 && resp.headers.get('content-type')?.includes('image')) {
-            console.log(`✅ HF API ${model.id} → 200 image`);
+            console.log(`✅ HF API ${model.id} → 200 (${(await resp.clone().blob()).size} bytes)`);
             return URL.createObjectURL(await resp.blob());
           }
 
-          // 503 = loading (cold start) → attendre avec retry
+          // ✅ 200 avec JSON (parfois l'API renvoie un JSON au lieu d'une image)
+          if (resp.status === 200) {
+            const text = await resp.text().catch(() => '');
+            console.log(`⚠️ HF API ${model.id} → 200 (pas une image): ${text.slice(0, 200)}`);
+            continue;
+          }
+
+          // ⏳ 503 = loading (cold start du modèle)
           if (resp.status === 503) {
             const text = await resp.text().catch(() => '');
-            console.log(`⏳ HF API ${model.id} → 503 (cold start): ${text.slice(0, 120)}`);
-            loadingSub.textContent = '🤖 Modèle en réveil (cold start)...';
+            console.log(`⏳ HF API ${model.id} → 503: ${text.slice(0, 120)}`);
+            loadingSub.textContent = '🤖 Modèle en réveil...';
             for (let i = 0; i < 4; i++) {
-              await new Promise(r => setTimeout(r, 15000));
-              loadingSub.textContent = `⏳ Toujours en réveil... (${(i+1)*15}s)`;
+              await new Promise(r => setTimeout(r, 10000));
+              loadingSub.textContent = `⏳ Réveil... (${(i+1)*10}s)`;
               const retry = await fetch(`https://api-inference.huggingface.co/models/${model.id}`, {
                 method: 'POST', headers, body: JSON.stringify(body),
               });
               if (retry.status === 200 && retry.headers.get('content-type')?.includes('image')) {
-                console.log(`✅ HF API ${model.id} → 200 après ${(i+1)*15}s de retry`);
+                console.log(`✅ HF API ${model.id} → 200 après ${(i+1)*10}s`);
                 return URL.createObjectURL(await retry.blob());
               }
-              if (retry.status !== 503 && retry.status !== 200) break;
+              if (retry.status !== 503) break;
             }
-            continue; // Timeout → essayer modèle suivant
-          }
-
-          // 401 = token invalide (authentification, pas permission)
-          if (resp.status === 401) {
-            const text = await resp.text().catch(() => '');
-            console.error(`❌ HF API ${model.id} → 401 (token invalide): ${text.slice(0, 200)}`);
-            throw new Error('TOKEN_INVALID');
-          }
-
-          // 403 = modèle gated/non autorisé → essayer suivant (pas une erreur de token)
-          if (resp.status === 403) {
-            const text = await resp.text().catch(() => '');
-            console.warn(`⚠️ HF API ${model.id} → 403 (modèle inaccessible): ${text.slice(0, 200)}`);
             continue;
           }
 
-          // 400/404/autres = format non supporté → essayer modèle suivant
-          if (resp.status >= 400) {
+          // 401 = token invalide
+          if (resp.status === 401) {
             const text = await resp.text().catch(() => '');
-            console.warn(`⚠️ HF API ${model.id} → ${resp.status}: ${text.slice(0, 200)}`);
+            console.error(`❌ HF API ${model.id} → 401: ${text.slice(0, 200)}`);
+            if (token) throw new Error('TOKEN_INVALID');
+            continue;
           }
-          continue;
+
+          // 403 = modèle gated (license non acceptée)
+          if (resp.status === 403) {
+            const text = await resp.text().catch(() => '');
+            console.warn(`⚠️ HF API ${model.id} → 403: ${text.slice(0, 200)}`);
+            continue;
+          }
+
+          // Autres erreurs
+          const text = await resp.text().catch(() => '');
+          console.warn(`⚠️ HF API ${model.id} → ${resp.status}: ${text.slice(0, 200)}`);
 
         } catch (e) {
           if (e.message === 'TOKEN_INVALID') throw e;
-          // Erreur réseau ou autre → essayer le modèle suivant
-          continue;
+          console.warn(`⚠️ HF API ${model.id} → network error: ${e.message}`);
         }
       }
-      throw new Error('Aucun modèle disponible via API Inference');
+      throw new Error('Aucun modèle disponible');
+    }
+
+    // ─── Appels Gradio REST (FALLBACK UNIQUEMENT pour les VRAIS Spaces) ───
+    async function callGradioSpace(spaceId, prompt, imageBase64) {
+      const imgRaw = imageBase64?.split(',')[1] || imageBase64;
+      const [user, sName] = spaceId.split('/');
+      const domain = `${user}-${sName.replace(/\./g, '-')}`.toLowerCase();
+      const BASE = `https://${domain}.hf.space`;
+
+      const ff = async (url, opts, ms) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
+        finally { clearTimeout(t); }
+      };
+
+      const getImg = async (respData) => {
+        const url = extractImageFromGradioData(respData) || extractImageFromResponse(respData);
+        if (!url) return null;
+        const abs = url.startsWith('http') ? url : `${BASE}/${url.replace(/^\//, '')}`;
+        const r = await ff(abs, {}, 15000);
+        return r?.ok ? URL.createObjectURL(await r.blob()) : null;
+      };
+
+      // Gradio 4.x streaming
+      try {
+        const r = await ff(`${BASE}/gradio_api/call/predict`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: [imgRaw, prompt] }),
+        }, 25000);
+        if (r?.ok) {
+          const { event_id } = await r.json();
+          if (event_id) {
+            for (let p = 0; p < 30; p++) {
+              await new Promise(s => setTimeout(s, 2000));
+              const d = await ff(`${BASE}/gradio_api/data/predict/${event_id}`, {}, 10000);
+              if (d?.ok) { const img = await getImg(await d.json()); if (img) return img; }
+            }
+          }
+        }
+      } catch {}
+
+      // Gradio 3.x
+      try {
+        const r = await ff(`${BASE}/api/predict/`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: [imgRaw, prompt] }),
+        }, 45000);
+        if (r?.ok) { const img = await getImg(await r.json()); if (img) return img; }
+      } catch {}
+
+      return null;
     }
 
     // ─── Point d'entrée de la génération ────────────────────────────────
@@ -1599,196 +1352,97 @@
       const basePrompt = buildEnhancedPrompt();
       const imgB64 = await fileToBase64(state.currentFile).catch(() => null);
 
-      // Debug logs pour diagnostiquer
       console.log('🚀 DzArchi AI Generation');
-      console.log('  Has token:', !!hfToken);
-      console.log('  User space:', userSpace || '(default)');
+      console.log('  Token:', hfToken ? '✅ présent' : '❌ absent (mode rate-limit bas)');
+      console.log('  Space user:', userSpace || '(aucun)');
       console.log('  Prompt:', basePrompt.slice(0, 80) + '...');
-      console.log('  File:', state.currentFile?.name, `(${(state.currentFile?.size / 1024).toFixed(1)} Ko)`);
-      console.log('  File protocol:', IS_FILE_PROTOCOL);
+      console.log('  Image:', state.currentFile?.name, `(${(state.currentFile?.size / 1024).toFixed(1)} Ko)`);
 
-      // ─── STRATÉGIE 1 : API Inference HF (si token fourni) ──────────
-      // L'API Inference HF est bien plus fiable — gestion auto du cold start,
-      // pas de mise en veille, réponse binaire directe.
+      // ─── STRATÉGIE UNIQUE : API Inference HF ────────────────────────
+      // Les modèles comme stabilityai/stable-diffusion-2-1 sont des MODELES
+      // du Hub, pas des Spaces Gradio. Le seul endpoint qui marche est
+      // api-inference.huggingface.co/models/{id}
+      //
+      // Fonctionne AVEC token (rate limit élevé) ou SANS (rate limit bas).
+      // Les modèles open (SD 1.5, SD 2.1) sont accessibles sans token.
+      // Les modèles gated (SD XL) nécessitent un token + licence acceptée.
+
+      const models = [];
+      if (userSpace) models.push({ id: userSpace, name: 'Custom', type: 'img2img' });
+      // Modèles ouverts (accessibles sans token)
+      models.push(
+        { id: 'runwayml/stable-diffusion-v1-5',            name: 'SD 1.5',          type: 'img2img' },
+        { id: 'stabilityai/stable-diffusion-2-1',          name: 'SD 2.1',          type: 'img2img' },
+      );
+      // Modèles gated (token nécessaire pour licence)
       if (hfToken) {
-        // Modèles Inference à essayer (img2img d'abord, puis txt2img)
-        const inferenceModels = [];
-        if (userSpace) inferenceModels.push({ id: userSpace, name: userSpace.split('/')[1], type: 'img2img' });
-
-        inferenceModels.push(
-          { id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'SD XL', type: 'img2img' },
-          { id: 'runwayml/stable-diffusion-v1-5',            name: 'SD 1.5', type: 'img2img' },
-          { id: 'black-forest-labs/FLUX.1-schnell',          name: 'FLUX', type: 'txt2img' },
-          { id: 'stabilityai/stable-diffusion-2-1',          name: 'SD 2.1', type: 'img2img' },
+        models.push(
+          { id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'SD XL',          type: 'img2img' },
+          { id: 'black-forest-labs/FLUX.1-schnell',         name: 'FLUX Schnell',   type: 'txt2img' },
         );
-
-        try {
-          const result = await callHFInference(inferenceModels, basePrompt, imgB64, hfToken);
-          cleanLoading(); state.isGenerating = false;
-          showSuccessState(result);
-          showToast('🎉 Rendu 3D généré ! (API Inference)', 'success', 5000);
-          return;
-        } catch (hfError) {
-          if (hfError.message === 'TOKEN_INVALID') {
-            cleanLoading(); state.isGenerating = false;
-            showErrorState(
-              'Token HF invalide',
-              'Votre token Hugging Face semble invalide ou expiré. Générez-en un nouveau sur huggingface.co/settings/tokens puis réessayez.'
-            );
-            showToast('Token HF invalide — vérifiez votre token', 'error', 6000);
-            return;
-          }
-          // Fallback vers la méthode Gradio
-          console.warn('HF API Inference failed:', hfError.message);
-          loadingMessage.textContent = '⚠️ Fallback Spaces Gradio...';
-          loadingSub.textContent = 'Les Spaces gratuits mettent 1-3 min à démarrer';
-          await new Promise(r => setTimeout(r, 800));
-        }
       }
 
-      // ─── STRATÉGIE 2 : Spaces Gradio (fallback, pas de token) ─────
-      const spaceList = [];
-      if (userSpace) spaceList.push({ id: userSpace });
-      spaceList.push(
-        { id: 'stabilityai/stable-diffusion-2-1' },
-        { id: 'stabilityai/stable-diffusion-xl-base-1.0' },
-        { id: 'runwayml/stable-diffusion-v1-5' },
-        { id: 'black-forest-labs/FLUX.1-schnell' },
+      try {
+        const result = await callHFInference(models, basePrompt, imgB64, hfToken);
+        cleanLoading(); state.isGenerating = false;
+        showSuccessState(result);
+        showToast('🎉 Rendu 3D généré !', 'success', 5000);
+        return;
+      } catch (e) {
+        if (e.message === 'TOKEN_INVALID') {
+          cleanLoading(); state.isGenerating = false;
+          showErrorState('Token HF invalide', 'Votre token est invalide ou expiré. Créez-en un sur huggingface.co/settings/tokens');
+          showToast('Token invalide', 'error', 6000);
+          return;
+        }
+        // Fallback Gradio si l'API Inference a echoue
+        console.warn('⚠️ HF API Inference failed, fallback Gradio:', e.message);
+        loadingMessage.textContent = 'Fallback Gradio Spaces...';
+        loadingSub.textContent = 'Tentative via les Spaces (lent)';
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      // ─── FALLBACK : Vrais Spaces Gradio ──────────────────────────────
+      // Uniquement pour les modeles qui ONT une UI Gradio.
+      // Ces Spaces ont des sous-domaines .hf.space et des endpoints /api/predict/
+      const gradioSpaces = [];
+      if (userSpace) gradioSpaces.push(userSpace);
+      gradioSpaces.push(
+        'stabilityai/stable-diffusion-3.5-large',
+        'black-forest-labs/FLUX.1-schnell',
+        'stabilityai/stable-diffusion-xl-base-1.0',
       );
 
       let lastError = null;
-
-      for (let si = 0; si < spaceList.length; si++) {
-        const spaceId = spaceList[si].id;
-        if (si > 0) {
-          loadingMessage.textContent = `🔄 Fallback → ${spaceId}`;
-          loadingSub.textContent = 'Space précédent indisponible, essai suivant...';
-          await new Promise(r => setTimeout(r, 500));
-        }
-
+      for (const spaceId of gradioSpaces) {
+        loadingMessage.textContent = `🔄 ${spaceId}`;
+        loadingSub.textContent = 'Space Gradio (réveil 1-3 min)...';
+        console.log(`📡 Gradio fallback ${spaceId}...`);
         try {
-          showToast(`🚀 ${spaceId}`, 'info', 3000);
-          const name = spaceId.split('/')[1];
-          loadingMessage.textContent = `⚡ ${name}`;
-
-          // Domaine: stabilityai-stable-diffusion-2-1.hf.space
-          const [user, sName] = spaceId.split('/');
-          const domain = `${user}-${sName.replace(/\./g, '-')}`.toLowerCase();
-          const BASE = `https://${domain}.hf.space`;
-
-          const imgRaw = imgB64 ? imgB64.split(',')[1] : null;
-
-          // fetch avec timeout
-          const ff = async (url, opts, ms) => {
-            const ctrl = new AbortController();
-            const t = setTimeout(() => ctrl.abort(), ms);
-            try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
-            finally { clearTimeout(t); }
-          };
-
-          // Extraire image + fetch → blob URL
-          const getImg = async (respData) => {
-            const url = extractImageFromGradioData(respData) || extractImageFromResponse(respData);
-            if (!url) return null;
-            const abs = url.startsWith('http') ? url : `${BASE}/${url.replace(/^\//, '')}`;
-            const r = await ff(abs, {}, 15000);
-            return r?.ok ? URL.createObjectURL(await r.blob()) : null;
-          };
-
-          let result = null;
-
-          // 1) Gradio 4.x streaming
-          loadingSub.textContent = 'Gradio4 streaming...';
-          try {
-            const r = await ff(`${BASE}/gradio_api/call/predict`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ data: [imgRaw, basePrompt] }),
-            }, 30000);
-            if (r?.ok) {
-              const { event_id } = await r.json();
-              if (event_id) {
-                for (let p = 0; p < 30; p++) {
-                  await new Promise(s => setTimeout(s, 2000));
-                  const d = await ff(`${BASE}/gradio_api/data/predict/${event_id}`, {}, 10000);
-                  if (d?.ok) { result = await getImg(await d.json()); if (result) break; }
-                }
-              }
-            }
-          } catch {}
-
-          // 2) Gradio 3.x api/predict/ — avec gestion cold start 503
-          if (!result) {
-            loadingSub.textContent = 'Gradio3 /api/predict/ (réveil Space)...';
-            try {
-              const r = await ff(`${BASE}/api/predict/`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: [imgRaw, basePrompt] }),
-              }, 60000);
-              if (r?.ok) {
-                result = await getImg(await r.json());
-              } else if (r?.status === 503) {
-                // Space en réveil → retry 3x avec 20s
-                loadingSub.textContent = '⏳ Space en réveil (503 → retry)...';
-                console.warn(`⏳ ${spaceId} → 503 (loading), retrying...`);
-                for (let w = 0; w < 3; w++) {
-                  await new Promise(s => setTimeout(s, 20000));
-                  loadingSub.textContent = `⏳ Retry ${w+1}/3...`;
-                  const r2 = await ff(`${BASE}/api/predict/`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: [imgRaw, basePrompt] }),
-                  }, 60000);
-                  if (r2?.ok) { result = await getImg(await r2.json()); if (result) break; }
-                }
-              }
-            } catch (e) {
-              console.warn(`⚠️ ${spaceId} Gradio3 error:`, e.message);
-            }
+          const result = await callGradioSpace(spaceId, basePrompt, imgB64);
+          if (result) {
+            cleanLoading(); state.isGenerating = false;
+            showSuccessState(result);
+            showToast('🎉 Rendu via Space Gradio !', 'success', 5000);
+            return;
           }
-
-          // 3) txt2img fallback (sans image)
-          if (!result) {
-            loadingSub.textContent = 'txt2img fallback...';
-            try {
-              const r = await ff(`${BASE}/api/predict/`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data: [basePrompt] }),
-              }, 45000);
-              if (r?.ok) {
-                result = await getImg(await r.json());
-              } else if (r?.status === 503) {
-                for (let w = 0; w < 2; w++) {
-                  await new Promise(s => setTimeout(s, 20000));
-                  const r2 = await ff(`${BASE}/api/predict/`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: [basePrompt] }),
-                  }, 45000);
-                  if (r2?.ok) { result = await getImg(await r2.json()); if (result) break; }
-                }
-              }
-            } catch {}
-          }
-
-          if (!result) throw new Error('Aucune image');
-
-          cleanLoading(); state.isGenerating = false;
-          showSuccessState(result);
-          showToast('🎉 Rendu 3D genere !', 'success', 5000);
-          return;
-
-        } catch (e) { lastError = e; console.warn(spaceId, e.message); }
+        } catch (e) {
+          lastError = e;
+          console.warn(`⚠️ Gradio ${spaceId} failed:`, e.message);
+        }
       }
 
+      // ─── TOUT A ÉCHOUÉ ──────────────────────────────────────────────
       cleanLoading(); state.isGenerating = false;
-      const lastMsg = lastError?.message || 'Tous les Spaces indisponibles';
+      const suggestions = hfToken
+        ? 'Vérifiez que votre token est valide et que les modèles sont accessibles. Essayez un Space ID personnalisé.'
+        : '💡 Obtenez un token gratuit sur huggingface.co/settings/tokens pour une meilleure fiabilité.';
+      showErrorState('Aucune image générée', suggestions);
+      showToast('❌ Erreur de génération', 'error', 6000);
       console.error('❌ ALL STRATEGIES FAILED');
-      console.error('  Last error:', lastMsg);
-      console.error('  Token was:', hfToken ? 'provided' : 'NOT provided');
-      console.error('  Spaces tried:', spaceList.map(s => s.id).join(', '));
-      const tokenHint = hfToken
-        ? 'Votre token HF ne fonctionne pas avec ces modèles. Vérifiez la console F12 pour le détail. Essayez un autre Space ou modèle.'
-        : '💡 Obtenez un token gratuit sur huggingface.co/settings/tokens pour une génération fiable (pas de mise en veille).';
-      showErrorState('Aucune image disponible', tokenHint);
-      showToast('❌ Erreur : ' + msg, 'error', 6000);
+      console.error('  Last:', lastError?.message || 'unknown');
+      console.error('  HF API tried:', models.map(m => m.id).join(', '));
+      console.error('  Gradio tried:', gradioSpaces.join(', '));
     }
 
     // ─── Événements des boutons ─────────────────────────────────────────
