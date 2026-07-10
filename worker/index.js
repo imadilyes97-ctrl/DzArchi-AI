@@ -23,7 +23,9 @@ export default {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { modelId, prompt, image, token } = body;
+    // Compatible: modelId (nouveau) OU spaceId (ancien)
+    const modelId = body.modelId || body.spaceId;
+    const { prompt, image, token } = body;
     if (!modelId || !prompt || !token) {
       return new Response(JSON.stringify({ error: 'Missing modelId, prompt, or token' }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -32,7 +34,7 @@ export default {
 
     // Helper: appel API HF avec timeout
     const callHF = async (bodyObj, signal) => {
-      const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+      const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId_}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -156,7 +158,7 @@ export default {
     }
 
     return new Response(JSON.stringify({
-      error: `Tous les formats ont échoué pour ${modelId}. Vérifiez le token ou l'ID du modèle.`,
+      error: `Tous les formats ont échoué pour ${modelId_}. Vérifiez le token ou l'ID du modèle.`,
       model: modelId,
     }), { status: 502, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   },
