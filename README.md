@@ -45,15 +45,27 @@ Vous pouvez utiliser votre propre Space Hugging Face en modifiant le champ **Spa
 - `runwayml/stable-diffusion-v1-5`
 - `black-forest-labs/FLUX.1-schnell`
 
-### Cloudflare Worker (proxy HF)
+### Cloudflare Worker (proxy HF — OBLIGATOIRE pour Algérie)
 
-Un proxy Cloudflare Worker est disponible dans `worker/` pour les déploiements où le CORS bloque les appels directs :
+⚠️ **L'API `api-inference.huggingface.co` est bloquée dans certains pays (Algérie).**
+Il faut déployer un Cloudflare Worker qui sert de proxy.
 
+**Option 1 : Cloudflare Dashboard (recommandé, 5 clics)**
+1. Allez sur [Cloudflare Dashboard](https://dash.cloudflare.com) → Workers & Pages
+2. Cliquez sur **Créer un Worker**
+3. Supprimez le code par défaut et collez le contenu de `worker/index.js`
+4. Cliquez sur **Déployer**
+5. Copiez l'URL (ex: `https://dzarchi-hf-proxy.nom.workers.dev`)
+6. Collez cette URL dans le champ **☁️ Cloudflare Worker URL** dans l'application
+
+**Option 2 : CLI (si wrangler fonctionne)**
 ```bash
 cd worker
 npm install -g wrangler
 wrangler deploy
 ```
+
+**Après déploiement :** mettez votre token HF + l'URL du worker dans l'app → img2img fonctionne avec votre plan 2D !
 
 ## 🛠 Stack
 

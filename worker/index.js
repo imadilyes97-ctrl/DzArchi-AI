@@ -1,12 +1,11 @@
 // ─── Cloudflare Worker → API Inference Hugging Face ──────────────
 // Deploy: wrangler deploy
 // Proxy bypass: CORS + DNS (Cloudflare n'a pas les restrictions Vercel)
+// Fix img2img format: HF API attend l'image en inputs et prompt en parameters
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
-    // CORS headers
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -23,24 +22,24 @@ export default {
       });
     }
 
-    // Parse body
     const body = await request.json().catch(() => ({}));
-    const { spaceId, prompt, image, token } = body;
-    if (!spaceId || !prompt || !token) {
-      return new Response(JSON.stringify({ error: 'Missing spaceId, prompt, or token' }), {
+    const { modelId, prompt, image, token } = body;
+    if (!modelId || !prompt || !token) {
+      return new Response(JSON.stringify({ error: 'Missing modelId, prompt, or token' }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
-    // Helper: appeler l'API HF
-    const callHF = async (bodyObj) => {
-      const resp = await fetch(`https://api-inference.huggingface.co/models/${spaceId}`, {
+    // Helper: appel API HF avec timeout
+    const callHF = async (bodyObj, signal) => {
+      const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(bodyObj),
+        signal,
       });
       const contentType = resp.headers.get('content-type') || '';
       const isImage = contentType.includes('image');
@@ -48,63 +47,117 @@ export default {
       return { status: resp.status, data, isImage, contentType };
     };
 
-    // Essayer img2img puis txt2img
-    const attempts = [];
+    // Stratégie A: img2img (image + prompt)
     if (image) {
-      attempts.push({ n: 'img2img', b: { inputs: prompt, image } });
-      attempts.push({ n: 'img2img-p', b: { inputs: prompt, parameters: { image } } });
-    }
-    attempts.push({ n: 'txt2img', b: { inputs: prompt } });
+      // Format HF API pour img2img:
+      // { "inputs": image_base64, "parameters": { "prompt": "..." } }
+      const cleanB64 = image.includes('base64,') ? image.split('base64,')[1] : image;
+      const img2imgBody = {
+        inputs: cleanB64,
+        parameters: {
+          prompt: prompt,
+          negative_prompt: "low quality, blurry, distorted, ugly",
+          num_inference_steps: 30,
+          guidance_scale: 7.5,
+        }
+      };
 
-    for (const a of attempts) {
-      let r;
-      try { r = await callHF(a.b); } catch { continue; }
+      // Essai avec retry 503 (cold start)
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 60000);
 
-      // 503 = loading → retry
-      if (r.status === 503) {
-        for (let rt = 0; rt < 3; rt++) {
-          await new Promise(s => setTimeout(s, 15000));
-          try { r = await callHF(a.b); } catch { continue; }
+          const r = await callHF(img2imgBody, controller.signal);
+          clearTimeout(timeout);
+
           if (r.status === 200 && r.isImage && r.data.length > 500) {
             return new Response(r.data, {
               status: 200,
               headers: { 'Content-Type': r.contentType || 'image/png', ...corsHeaders },
             });
           }
+
+          // 503 = chargement → attendre et réessayer
+          if (r.status === 503 && attempt < 3) {
+            await new Promise(s => setTimeout(s, 15000));
+            continue;
+          }
+
+          // 401/403 = token invalide → stop immédiat
+          if (r.status === 401 || r.status === 403) {
+            const err = typeof r.data === 'string' ? r.data : 'Token invalide';
+            return new Response(JSON.stringify({ error: err.substring(0, 300) }), {
+              status: r.status,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            });
+          }
+
+          // Autre erreur → essayer format alternatif
+          if (r.status !== 200) break;
+
+        } catch (e) {
+          if (e.name === 'AbortError') continue;
+          // Network error → essayer format alternatif
+          break;
         }
+      }
+
+      // Format alternatif: prompt en header (certains modèles)
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        const r = await callHF({
+          inputs: cleanB64,
+          parameters: { prompt: prompt }
+        }, controller.signal);
+        clearTimeout(timeout);
+
+        if (r.status === 200 && r.isImage && r.data.length > 500) {
+          return new Response(r.data, {
+            status: 200,
+            headers: { 'Content-Type': r.contentType || 'image/png', ...corsHeaders },
+          });
+        }
+      } catch {}
+    }
+
+    // Stratégie B: txt2img (prompt seulement, pas d'image)
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000);
+        const r = await callHF({ inputs: prompt }, controller.signal);
+        clearTimeout(timeout);
+
+        if (r.status === 200 && r.isImage && r.data.length > 500) {
+          return new Response(r.data, {
+            status: 200,
+            headers: { 'Content-Type': r.contentType || 'image/png', ...corsHeaders },
+          });
+        }
+
+        if (r.status === 503 && attempt < 3) {
+          await new Promise(s => setTimeout(s, 15000));
+          continue;
+        }
+
+        if (r.status === 401 || r.status === 403) {
+          return new Response(JSON.stringify({ error: 'Token invalide' }), {
+            status: r.status,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          });
+        }
+
+        break;
+      } catch {
         continue;
       }
-
-      // 200 = success
-      if (r.status === 200 && r.isImage && r.data.length > 500) {
-        return new Response(r.data, {
-          status: 200,
-          headers: { 'Content-Type': r.contentType || 'image/png', ...corsHeaders },
-        });
-      }
-
-      // 401/403 = stop
-      if (r.status === 401 || r.status === 403) {
-        const err = typeof r.data === 'string' ? r.data : 'Auth error';
-        return new Response(JSON.stringify({ error: err.substring(0, 300), model: spaceId }), {
-          status: r.status,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
-        });
-      }
-
-      // 400/404 = format non supporte → continuer
-      if (r.status === 400 || r.status === 404) continue;
-
-      // Autre erreur
-      return new Response(JSON.stringify({ error: `HF HTTP ${r.status}` }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
     }
 
     return new Response(JSON.stringify({
-      error: `Tous les formats echoues pour ${spaceId}. Verifiez le token.`,
-      model: spaceId,
+      error: `Tous les formats ont échoué pour ${modelId}. Vérifiez le token ou l'ID du modèle.`,
+      model: modelId,
     }), { status: 502, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   },
 };

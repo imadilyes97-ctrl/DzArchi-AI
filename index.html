@@ -707,10 +707,18 @@
               </p>
             </div>
 
-            <!-- Fallback info -->
-            <div class="mt-3 flex items-center gap-2 text-[10px] text-slate-600 bg-white/[0.02] rounded-lg px-3 py-2 border border-white/5">
-              <svg class="w-3 h-3 text-amber-400/60 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span id="fallbackInfo">💡 Mettez un token HF gratuit ci-dessus → génération fiable via API Inference (pas de cold start, pas de mise en veille)</span>
+            <!-- CF Worker URL (pour pays avec DNS bloqué) -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="text-xs font-medium text-slate-500" id="workerLabel">☁️ Cloudflare Worker URL</label>
+              </div>
+              <input type="url" id="workerUrlInput" class="input-premium font-mono text-xs"
+                placeholder="https://dzarchi-hf-proxy.nom.workers.dev" autocomplete="url" />
+              <p class="text-[10px] text-slate-600 mt-1.5 leading-relaxed" id="workerHint">
+                Optionnel. Déployez le worker sur <a href="https://dash.cloudflare.com" target="_blank" class="text-indigo-400/80 hover:text-indigo-300 underline">Cloudflare Dashboard</a> →
+                Workers & Pages → Créer un Worker → Collez le contenu de <code class="text-indigo-400/60">worker/index.js</code> → Déployer.
+                Obligatoire si vous êtes dans un pays où api-inference.huggingface.co est bloqué.
+              </p>
             </div>
           </div>
 
@@ -1193,98 +1201,63 @@
       });
     }
 
-    // ─── Template des modèles img2img HF ──────────────────────────────────
+    // ─── Modèles img2img pour le worker ──────────────────────────────────
     const HF_IMG2IMG_MODELS = [
       'stabilityai/stable-diffusion-xl-base-1.0',
       'stabilityai/stable-diffusion-v1-5',
       'runwayml/stable-diffusion-v1-5',
     ];
 
-    // ─── Appel API Inference Hugging Face (img2img) ──────────────────────
-    async function callHFInference(modelId, imageBase64, prompt, hfToken) {
-      // Nettoyer le préfixe data:image/...;base64,
-      const cleanB64 = imageBase64.includes('base64,')
-        ? imageBase64.split('base64,')[1]
-        : imageBase64;
+    // ─── Worker URL par défaut (sera remplacé après déploiement) ─────────
+    let WORKER_URL = localStorage.getItem('dzarchi-worker-url') || '';
 
-      loadingMessage.textContent = `🧠 ${modelId.split('/')[1]}`;
-      loadingSub.textContent = 'img2img via HF Inference...';
+    // ─── Appel Cloudflare Worker (proxy HF) ──────────────────────────────
+    async function callWorker(modelId, imageBase64, prompt, hfToken) {
+      if (!WORKER_URL) throw new Error("WORKER_NON_DEPLOYE");
+
+      loadingMessage.textContent = `☁️ ${modelId.split('/')[1]}`;
+      loadingSub.textContent = 'via Cloudflare Worker...';
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min max
+      const timeout = setTimeout(() => controller.abort(), 120000);
 
       try {
-        const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+        const resp = await fetch(WORKER_URL + '/api/hf', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${hfToken}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            inputs: cleanB64,
-            parameters: {
-              prompt: prompt,
-              negative_prompt: "low quality, blurry, distorted, ugly, deformed, bad architecture, bad proportions, unrealistic",
-              num_inference_steps: 30,
-              guidance_scale: 7.5,
-            }
+            modelId: modelId,
+            prompt: prompt,
+            image: imageBase64 || null,
+            token: hfToken,
           }),
           signal: controller.signal,
         });
 
         clearTimeout(timeout);
 
-        // 503 = modèle en chargement (cold start), retry
-        if (resp.status === 503) {
-          for (let i = 0; i < 6; i++) {
-            loadingSub.textContent = `⏳ Modèle en chargement... ${(i+1)*10}s`;
-            await new Promise(r => setTimeout(r, 10000));
-            const retry = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${hfToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                inputs: cleanB64,
-                parameters: {
-                  prompt: prompt,
-                  negative_prompt: "low quality, blurry, distorted, ugly, deformed, bad architecture, bad proportions, unrealistic",
-                  num_inference_steps: 30,
-                  guidance_scale: 7.5,
-                }
-              }),
-            });
-            if (retry.ok) {
-              const blob = await retry.blob();
-              loadingProgress.style.width = '95%';
-              return URL.createObjectURL(blob);
-            }
-            if (retry.status !== 503 && retry.status !== 500) {
-              throw new Error(`HF API ${retry.status}`);
-            }
+        // Image directe
+        if (resp.ok && resp.headers.get('content-type')?.includes('image')) {
+          const blob = await resp.blob();
+          if (blob.size > 500) {
+            loadingProgress.style.width = '95%';
+            return URL.createObjectURL(blob);
           }
-          throw new Error("Le modèle met trop de temps à charger");
         }
 
-        // Token invalide
+        // Erreur JSON
+        const errData = await resp.json().catch(() => ({}));
+
         if (resp.status === 401 || resp.status === 403) {
           throw new Error("TOKEN_INVALIDE");
         }
 
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => '');
-          throw new Error(`Erreur API ${resp.status}`);
-        }
-
-        // ✅ Succès — réponse = image binaire directe
-        const blob = await resp.blob();
-        loadingProgress.style.width = '95%';
-        return URL.createObjectURL(blob);
+        throw new Error(errData.error || `Worker ${resp.status}`);
 
       } catch (e) {
         clearTimeout(timeout);
         if (e.name === 'AbortError') throw new Error("Timeout 120s");
+        if (e.message === "WORKER_NON_DEPLOYE") throw e;
         throw e;
       }
     }
@@ -1367,14 +1340,16 @@
         const hfToken = hfTokenInput.value.trim() || null;
         console.log('\ud83d\ude80 DzArchi AI generate');
         console.log('  Token:', hfToken ? hfToken.slice(0, 8) + '...' : 'none');
+        console.log('  Worker:', WORKER_URL || 'none');
         console.log('  Image:', state.currentFile.name);
 
-        // \u26a0\ufe0f FLUX = txt2img \u2192 ne tient PAS compte du plan 2D upload\u00e9 !
-        // STRAT\u00c9GIE A (PRIORITAIRE): img2img via API Inference HF avec le plan 2D
+        // img2img = utilise VRAIMENT le plan 2D
+        // txt2img = plan 2D ignor\u00e9 (FLUX)
+
+        // STRAT\u00c9GIE A (PRIORITAIRE): img2img via Worker CF ou API HF
         if (hfToken) {
           try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
 
-          loadingMessage.textContent = '\ud83d\udd0d img2img avec le plan 2D';
           const imgB64 = await fileToBase64(state.currentFile);
 
           const modelsToTry = [...HF_IMG2IMG_MODELS];
@@ -1384,45 +1359,53 @@
 
           for (const modelId of modelsToTry) {
             try {
-              const imgUrl = await callHFInference(modelId, imgB64, basePrompt, hfToken);
-              cleanLoading();
-              state.isGenerating = false;
+              let imgUrl;
+              if (WORKER_URL) {
+                // Proxy CF Worker (contournement DNS Alg\u00e9rie)
+                imgUrl = await callWorker(modelId, imgB64, basePrompt, hfToken);
+              } else {
+                // Direct HF API (bloqu\u00e9 en Alg\u00e9rie)
+                throw new Error('WORKER_NON_DEPLOYE');
+              }
+              cleanLoading(); state.isGenerating = false;
               showSuccessState(imgUrl);
-              showToast('\u2705 Rendu 3D avec ' + modelId.split('/')[1] + ' !', 'success', 5000);
+              showToast('\u2705 ' + modelId.split('/')[1] + ' !', 'success', 5000);
               return;
             } catch (e) {
               console.warn('\u26a0\ufe0f ' + modelId + ' failed:', e.message);
               if (e.message === 'TOKEN_INVALIDE') {
                 cleanLoading(); state.isGenerating = false;
-                showErrorState('Token invalide', 'Votre token Hugging Face est invalide. G\u00e9n\u00e9rez-en un nouveau sur huggingface.co/settings/tokens');
+                showErrorState('Token invalide', 'Cr\u00e9ez un token sur huggingface.co/settings/tokens');
                 showToast('\u274c Token invalide', 'error', 6000);
                 return;
               }
-              loadingSub.textContent = 'Fallback: ' + modelId.split('/')[1] + ' \u2192 suivant...';
-              await new Promise(r => setTimeout(r, 1000));
+              if (e.message === 'WORKER_NON_DEPLOYE') {
+                cleanLoading(); state.isGenerating = false;
+                showErrorState('Worker CF requis', 'Pour img2img depuis l\'Alg\u00e9rie, d\u00e9ployez le CF Worker. FLUX txt2img reste disponible.');
+                showToast('\u274c Worker non d\u00e9ploy\u00e9', 'error', 6000);
+                return;
+              }
+              loadingSub.textContent = modelId.split('/')[1] + ' \u2192 suivant...';
+              await new Promise(r => setTimeout(r, 500));
             }
           }
-          // Fallback txt2img si tous les img2img ont \u00e9chou\u00e9
-          loadingMessage.textContent = 'Fallback txt2img...';
-          loadingSub.textContent = 'G\u00e9n\u00e9ration sans plan 2D...';
         }
 
-        // STRAT\u00c9GIE B (fallback): txt2img via Gradio
-        const spaces = [];
-        if (userSpace && !userSpace.startsWith('http')) spaces.push(userSpace);
-        spaces.push('black-forest-labs/FLUX.1-schnell');
+        // STRAT\u00c9GIE B (fallback): txt2img via FLUX Gradio (pas de plan 2D)
+        const spaces = ['black-forest-labs/FLUX.1-schnell'];
+        if (userSpace && !userSpace.startsWith('http')) spaces.unshift(userSpace);
         let lastErr = null;
         for (const sid of spaces) {
           loadingMessage.textContent = '\ud83c\udfa8 ' + sid.split('/')[1];
           try {
             const img = await callGradioSpace(sid, basePrompt);
             cleanLoading(); state.isGenerating = false; showSuccessState(img);
-            showToast('\u2705 Rendu 3D ! (bas\u00e9 sur la description, plan 2D ignor\u00e9)', 'success', 5000); return;
+            showToast('\u2705 Rendu txt2img (sans plan 2D)', 'info', 5000); return;
           } catch (e) { lastErr = e; console.warn('\u26a0\ufe0f ' + sid + ': ' + e.message); }
         }
 
         cleanLoading(); state.isGenerating = false;
-        showErrorState('Tous les mod\u00e8les ont \u00e9chou\u00e9', (lastErr?.message || 'Erreur') + '. Ajoutez un token HF valide pour img2img.');
+        showErrorState('Aucun mod\u00e8le disponible', 'D\u00e9ployez le CF Worker pour img2img.');
         showToast('\u274c G\u00e9n\u00e9ration impossible', 'error', 6000);
       } catch (g) {
         console.error('FATAL:', g);
@@ -1597,6 +1580,19 @@
       // Sauvegarder le Space ID à chaque changement
       spaceInput.addEventListener('change', () => {
         localStorage.setItem('dzarchi-space', spaceInput.value);
+      });
+
+      // Charger l'URL du worker depuis localStorage
+      const savedWorkerUrl = localStorage.getItem('dzarchi-worker-url');
+      if (savedWorkerUrl) {
+        WORKER_URL = savedWorkerUrl;
+        document.querySelector('#workerUrlInput').value = savedWorkerUrl;
+      }
+
+      // Sauvegarder l'URL du worker
+      document.querySelector('#workerUrlInput').addEventListener('change', (e) => {
+        WORKER_URL = e.target.value.trim();
+        localStorage.setItem('dzarchi-worker-url', WORKER_URL);
       });
 
       // État initial du bouton
