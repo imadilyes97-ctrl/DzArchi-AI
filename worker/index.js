@@ -34,7 +34,7 @@ export default {
 
     // Helper: appel API HF avec timeout
     const callHF = async (bodyObj, signal) => {
-      const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId_}`, {
+      const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -158,7 +158,7 @@ export default {
     }
 
     return new Response(JSON.stringify({
-      error: `Tous les formats ont échoué pour ${modelId_}. Vérifiez le token ou l'ID du modèle.`,
+      error: `Tous les formats ont échoué pour ${modelId}. Vérifiez le token ou l'ID du modèle.`,
       model: modelId,
     }), { status: 502, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
   },
