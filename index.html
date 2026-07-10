@@ -1215,22 +1215,19 @@
     async function callWorker(modelId, imageBase64, prompt, hfToken) {
       if (!WORKER_URL) throw new Error("WORKER_NON_DEPLOYE");
 
-      loadingMessage.textContent = `☁️ ${modelId.split('/')[1]}`;
-      loadingSub.textContent = 'via Cloudflare Worker...';
+      loadingMessage.textContent = '☁️ Cloudflare AI';
+      loadingSub.textContent = 'img2img...';
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000);
 
       try {
-        const resp = await fetch(WORKER_URL + '/api/hf', {
+        const resp = await fetch(WORKER_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            modelId: modelId,
-            spaceId: modelId, // Compatible ancienne version du worker
             prompt: prompt,
             image: imageBase64 || null,
-            token: hfToken,
           }),
           signal: controller.signal,
         });
@@ -1248,17 +1245,11 @@
 
         // Erreur JSON
         const errData = await resp.json().catch(() => ({}));
-
-        if (resp.status === 401 || resp.status === 403) {
-          throw new Error("TOKEN_INVALIDE");
-        }
-
         throw new Error(errData.error || `Worker ${resp.status}`);
 
       } catch (e) {
         clearTimeout(timeout);
         if (e.name === 'AbortError') throw new Error("Timeout 120s");
-        if (e.message === "WORKER_NON_DEPLOYE") throw e;
         throw e;
       }
     }
@@ -1340,14 +1331,27 @@
         const basePrompt = buildEnhancedPrompt();
         const hfToken = hfTokenInput.value.trim() || null;
         console.log('\ud83d\ude80 DzArchi AI generate');
-        console.log('  Token:', hfToken ? hfToken.slice(0, 8) + '...' : 'none');
         console.log('  Worker:', WORKER_URL || 'none');
         console.log('  Image:', state.currentFile.name);
 
-        // img2img = utilise VRAIMENT le plan 2D
-        // txt2img = plan 2D ignor\u00e9 (FLUX)
+        // STRAT\u00c9GIE A (PRIORITAIRE): CF Worker (Workers AI, pas de token)
+        if (WORKER_URL) {
+          loadingMessage.textContent = '\u2601\ufe0f img2img via Cloudflare AI';
+          const imgB64 = await fileToBase64(state.currentFile);
 
-        // STRAT\u00c9GIE A (PRIORITAIRE): img2img via Worker CF ou API HF
+          try {
+            const imgUrl = await callWorker('', imgB64, basePrompt, '');
+            cleanLoading(); state.isGenerating = false;
+            showSuccessState(imgUrl);
+            showToast('\u2705 Rendu 3D via Cloudflare AI !', 'success', 5000);
+            return;
+          } catch (e) {
+            console.warn('\u26a0\ufe0f Worker failed:', e.message);
+            loadingSub.textContent = 'Fallback FLUX...';
+          }
+        }
+
+        // STRAT\u00c9GIE B: API HF directe (si token fourni)
         if (hfToken) {
           try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
 
