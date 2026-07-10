@@ -1193,6 +1193,102 @@
       });
     }
 
+    // ─── Template des modèles img2img HF ──────────────────────────────────
+    const HF_IMG2IMG_MODELS = [
+      'stabilityai/stable-diffusion-xl-base-1.0',
+      'stabilityai/stable-diffusion-v1-5',
+      'runwayml/stable-diffusion-v1-5',
+    ];
+
+    // ─── Appel API Inference Hugging Face (img2img) ──────────────────────
+    async function callHFInference(modelId, imageBase64, prompt, hfToken) {
+      // Nettoyer le préfixe data:image/...;base64,
+      const cleanB64 = imageBase64.includes('base64,')
+        ? imageBase64.split('base64,')[1]
+        : imageBase64;
+
+      loadingMessage.textContent = `🧠 ${modelId.split('/')[1]}`;
+      loadingSub.textContent = 'img2img via HF Inference...';
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min max
+
+      try {
+        const resp = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${hfToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: cleanB64,
+            parameters: {
+              prompt: prompt,
+              negative_prompt: "low quality, blurry, distorted, ugly, deformed, bad architecture, bad proportions, unrealistic",
+              num_inference_steps: 30,
+              guidance_scale: 7.5,
+            }
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeout);
+
+        // 503 = modèle en chargement (cold start), retry
+        if (resp.status === 503) {
+          for (let i = 0; i < 6; i++) {
+            loadingSub.textContent = `⏳ Modèle en chargement... ${(i+1)*10}s`;
+            await new Promise(r => setTimeout(r, 10000));
+            const retry = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${hfToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                inputs: cleanB64,
+                parameters: {
+                  prompt: prompt,
+                  negative_prompt: "low quality, blurry, distorted, ugly, deformed, bad architecture, bad proportions, unrealistic",
+                  num_inference_steps: 30,
+                  guidance_scale: 7.5,
+                }
+              }),
+            });
+            if (retry.ok) {
+              const blob = await retry.blob();
+              loadingProgress.style.width = '95%';
+              return URL.createObjectURL(blob);
+            }
+            if (retry.status !== 503 && retry.status !== 500) {
+              throw new Error(`HF API ${retry.status}`);
+            }
+          }
+          throw new Error("Le modèle met trop de temps à charger");
+        }
+
+        // Token invalide
+        if (resp.status === 401 || resp.status === 403) {
+          throw new Error("TOKEN_INVALIDE");
+        }
+
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          throw new Error(`Erreur API ${resp.status}`);
+        }
+
+        // ✅ Succès — réponse = image binaire directe
+        const blob = await resp.blob();
+        loadingProgress.style.width = '95%';
+        return URL.createObjectURL(blob);
+
+      } catch (e) {
+        clearTimeout(timeout);
+        if (e.name === 'AbortError') throw new Error("Timeout 120s");
+        throw e;
+      }
+    }
+
     // ─── Appel Space Gradio 4.x SSE (FLUX.1-schnell ou custom) ───────────
     async function callGradioSpace(spaceId, prompt) {
       const [user, sName] = spaceId.split('/');
@@ -1269,46 +1365,65 @@
         const userSpace = spaceInput.value.trim();
         const basePrompt = buildEnhancedPrompt();
         const hfToken = hfTokenInput.value.trim() || null;
-        console.log('\U0001f680 DzArchi AI');
-        console.log('  Space:', userSpace || '(FLUX)');
+        console.log('\ud83d\ude80 DzArchi AI generate');
+        console.log('  Token:', hfToken ? hfToken.slice(0, 8) + '...' : 'none');
+        console.log('  Image:', state.currentFile.name);
 
-        // STRATEGIE A: Proxy (img2img) si URL http
-        if (userSpace && (userSpace.startsWith('http://') || userSpace.startsWith('https://'))) {
-          loadingMessage.textContent = '\U0001f517 Proxy';
-          loadingSub.textContent = 'img2img...';
-          try {
-            const imgB64 = await fileToBase64(state.currentFile).catch(() => null);
-            const img = await callProxy(userSpace, 'runwayml/stable-diffusion-v1-5', basePrompt, imgB64, hfToken);
-            cleanLoading(); state.isGenerating = false; showSuccessState(img);
-            showToast('\U0001f389 Rendu via proxy !', 'success', 5000); return;
-          } catch (e) {
-            if (e.message === 'AUTH_ERROR') {
-              cleanLoading(); state.isGenerating = false;
-              showErrorState('Erreur auth', 'Token invalide pour ce modele'); showToast('Auth error', 'error', 6000); return;
-            }
-            console.warn('Proxy failed:', e.message);
-            loadingMessage.textContent = 'Fallback FLUX...';
-            await new Promise(r => setTimeout(r, 500));
+        // \u26a0\ufe0f FLUX = txt2img \u2192 ne tient PAS compte du plan 2D upload\u00e9 !
+        // STRAT\u00c9GIE A (PRIORITAIRE): img2img via API Inference HF avec le plan 2D
+        if (hfToken) {
+          try { localStorage.setItem('dzarchi_hf_token', hfToken); } catch {}
+
+          loadingMessage.textContent = '\ud83d\udd0d img2img avec le plan 2D';
+          const imgB64 = await fileToBase64(state.currentFile);
+
+          const modelsToTry = [...HF_IMG2IMG_MODELS];
+          if (userSpace && !userSpace.startsWith('http')) {
+            modelsToTry.unshift(userSpace);
           }
+
+          for (const modelId of modelsToTry) {
+            try {
+              const imgUrl = await callHFInference(modelId, imgB64, basePrompt, hfToken);
+              cleanLoading();
+              state.isGenerating = false;
+              showSuccessState(imgUrl);
+              showToast('\u2705 Rendu 3D avec ' + modelId.split('/')[1] + ' !', 'success', 5000);
+              return;
+            } catch (e) {
+              console.warn('\u26a0\ufe0f ' + modelId + ' failed:', e.message);
+              if (e.message === 'TOKEN_INVALIDE') {
+                cleanLoading(); state.isGenerating = false;
+                showErrorState('Token invalide', 'Votre token Hugging Face est invalide. G\u00e9n\u00e9rez-en un nouveau sur huggingface.co/settings/tokens');
+                showToast('\u274c Token invalide', 'error', 6000);
+                return;
+              }
+              loadingSub.textContent = 'Fallback: ' + modelId.split('/')[1] + ' \u2192 suivant...';
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          }
+          // Fallback txt2img si tous les img2img ont \u00e9chou\u00e9
+          loadingMessage.textContent = 'Fallback txt2img...';
+          loadingSub.textContent = 'G\u00e9n\u00e9ration sans plan 2D...';
         }
 
-        // STRATEGIE B: FLUX txt2img
+        // STRAT\u00c9GIE B (fallback): txt2img via Gradio
         const spaces = [];
         if (userSpace && !userSpace.startsWith('http')) spaces.push(userSpace);
         spaces.push('black-forest-labs/FLUX.1-schnell');
         let lastErr = null;
         for (const sid of spaces) {
-          loadingMessage.textContent = '\U0001f3a8 ' + sid.split('/')[1];
+          loadingMessage.textContent = '\ud83c\udfa8 ' + sid.split('/')[1];
           try {
             const img = await callGradioSpace(sid, basePrompt);
             cleanLoading(); state.isGenerating = false; showSuccessState(img);
-            showToast('\U0001f389 Rendu 3D !', 'success', 5000); return;
+            showToast('\u2705 Rendu 3D ! (bas\u00e9 sur la description, plan 2D ignor\u00e9)', 'success', 5000); return;
           } catch (e) { lastErr = e; console.warn('\u26a0\ufe0f ' + sid + ': ' + e.message); }
         }
 
         cleanLoading(); state.isGenerating = false;
-        showErrorState('Indisponible', (lastErr?.message || 'Err') + '. Deployez le CF Worker pour img2img.');
-        showToast('\u274c Erreur', 'error', 6000);
+        showErrorState('Tous les mod\u00e8les ont \u00e9chou\u00e9', (lastErr?.message || 'Erreur') + '. Ajoutez un token HF valide pour img2img.');
+        showToast('\u274c G\u00e9n\u00e9ration impossible', 'error', 6000);
       } catch (g) {
         console.error('FATAL:', g);
         state.isGenerating = false;
