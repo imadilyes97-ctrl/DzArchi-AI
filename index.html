@@ -1209,7 +1209,7 @@
     ];
 
     // ─── Worker URL par défaut (sera remplacé après déploiement) ─────────
-    let WORKER_URL = localStorage.getItem('dzarchi-worker-url') || '';
+    let WORKER_URL = (localStorage.getItem('dzarchi-worker-url') || '').replace(/\/+$/, '');
 
     // ─── Appel Cloudflare Worker (proxy HF) ──────────────────────────────
     async function callWorker(modelId, imageBase64, prompt, hfToken) {
@@ -1227,6 +1227,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             modelId: modelId,
+            spaceId: modelId, // Compatible ancienne version du worker
             prompt: prompt,
             image: imageBase64 || null,
             token: hfToken,
